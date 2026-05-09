@@ -27,6 +27,12 @@ const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
 const testChineseOutputButton = document.querySelector("#testChineseOutputButton");
 const testOutboundButton = document.querySelector("#testOutboundButton");
 const auditLeakButton = document.querySelector("#auditLeakButton");
+const auditMicCaptureButton = document.querySelector("#auditMicCaptureButton");
+const liveBh2chMonitorButton = document.querySelector("#liveBh2chMonitorButton");
+const showDefaultOutputButton = document.querySelector("#showDefaultOutputButton");
+const bh2chLiveMeter = document.querySelector("#bh2chLiveMeter");
+const bh2chLivePeakLabel = document.querySelector("#bh2chLivePeakLabel");
+const bh2chLiveMeterCard = document.querySelector("#bh2chLiveMeterCard");
 const twoWayPanel = document.querySelector("#twoWayPanel");
 const startButton = document.querySelector("#startButton");
 const startTwoWayButton = document.querySelector("#startTwoWayButton");
@@ -65,6 +71,7 @@ const runtime = {
   outboundSenders: [],
   outboundReenableTimer: null,
   outboundOutputGuarded: false,
+  bh2chMonitor: null,
 };
 
 let diagnostics = createEmptyDiagnostics();
@@ -113,6 +120,22 @@ testOutboundButton.addEventListener("click", () => {
 
 auditLeakButton.addEventListener("click", () => {
   void auditInboundLeak();
+});
+
+auditMicCaptureButton.addEventListener("click", () => {
+  void auditOutboundMicCapture();
+});
+
+liveBh2chMonitorButton.addEventListener("click", () => {
+  if (runtime.bh2chMonitor) {
+    void stopBh2chMonitor("user toggle");
+  } else {
+    void startBh2chMonitor();
+  }
+});
+
+showDefaultOutputButton.addEventListener("click", () => {
+  void logSystemDefaultOutput();
 });
 
 navigator.mediaDevices?.addEventListener?.("devicechange", () => {
@@ -443,6 +466,258 @@ async function auditInboundLeak() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function auditOutboundMicCapture() {
+  if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
+    logEvent("audit.mic.error", "Browser does not support enumerateDevices/getUserMedia");
+    return;
+  }
+
+  let micStream;
+  let audioContext;
+  const wasMicEnabled = diagnostics.outboundMicEnabled;
+
+  try {
+    if (!inboundOutputDevice.value) {
+      throw new Error("Choose an explicit 'Their voice → Chinese output' device first.");
+    }
+    if (isBlackHoleLabel(selectedOptionLabel(inboundOutputDevice))) {
+      throw new Error("Inbound output is a BlackHole device; routing is already misconfigured.");
+    }
+
+    if (runtime.outboundInputTracks.length) {
+      await setOutboundInputEnabled(false, "audit.mic");
+    }
+
+    micStream = await navigator.mediaDevices.getUserMedia(buildMicrophoneMediaOptions());
+    const tracks = micStream.getAudioTracks();
+    if (!tracks.length) {
+      throw new Error("getUserMedia returned no audio tracks.");
+    }
+
+    const settings = tracks[0].getSettings?.() ?? {};
+    const resolvedDeviceId = settings.deviceId ?? "";
+    let resolvedLabel = tracks[0].label || "";
+    if (!resolvedLabel && resolvedDeviceId) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      resolvedLabel =
+        devices.find(
+          (device) => device.kind === "audioinput" && device.deviceId === resolvedDeviceId,
+        )?.label ?? "";
+    }
+    logEvent(
+      "audit.mic.device",
+      `Resolved microphone: "${resolvedLabel || "unlabeled"}" (deviceId=${resolvedDeviceId || "default"})`,
+    );
+
+    audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(micStream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 4096;
+    source.connect(analyser);
+
+    const samples = new Float32Array(analyser.fftSize);
+    const measureRms = () => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) sum += sample * sample;
+      return Math.sqrt(sum / samples.length);
+    };
+
+    await sleep(500);
+    let baseline = 0;
+    for (let i = 0; i < 5; i += 1) {
+      baseline = Math.max(baseline, measureRms());
+      await sleep(60);
+    }
+    logEvent("audit.mic.baseline", `Microphone idle peak RMS: ${baseline.toFixed(4)}`);
+
+    const tone = createTranslatedAudioSink("audit mic tone");
+    tone.volume = 0.6;
+    tone.src = createToneWavDataUrl({ frequency: 660, durationSeconds: 1.5 });
+    await applyOutputDevice(tone, inboundOutputDevice, "audit.mic (inbound sink)", {
+      required: true,
+      forbidBlackHole: true,
+    });
+    tone.muted = false;
+    await tone.play();
+
+    await sleep(250);
+    let peak = 0;
+    for (let i = 0; i < 12; i += 1) {
+      peak = Math.max(peak, measureRms());
+      await sleep(80);
+    }
+    logEvent(
+      "audit.mic.peak",
+      `Microphone peak RMS while inbound tone playing: ${peak.toFixed(4)}`,
+    );
+
+    const delta = peak - baseline;
+    const leakThreshold = 0.005;
+    if (delta > leakThreshold) {
+      const looksLikeBluetoothHeadset = /bluetooth|airpods|shokz|openrun|bose|sony/i.test(
+        resolvedLabel,
+      );
+      const hint = looksLikeBluetoothHeadset
+        ? ` The mic appears to be a Bluetooth headset's onboard mic — macOS HFP profile likely auto-switched it. In System Settings → Sound → Input, pick MacBook Pro Microphone (or another physical mic) instead.`
+        : " Even physical mics can capture audible bleed from the inbound output. Use headphones with sufficient isolation, or pick a different mic in macOS Sound settings.";
+      logEvent(
+        "audit.mic.result",
+        `MIC LEAK DETECTED (delta=${delta.toFixed(4)}). Microphone "${resolvedLabel}" is acoustically capturing the inbound output. The outbound translation session will pick up your inbound Chinese as input.${hint}`,
+      );
+    } else {
+      logEvent(
+        "audit.mic.result",
+        `OK (delta=${delta.toFixed(4)}). Microphone "${resolvedLabel}" does not capture the inbound tone above the noise floor.`,
+      );
+    }
+  } catch (error) {
+    logEvent("audit.mic.error", error instanceof Error ? error.message : String(error));
+  } finally {
+    if (micStream) {
+      micStream.getTracks().forEach((track) => track.stop());
+    }
+    if (audioContext && audioContext.state !== "closed") {
+      try {
+        await audioContext.close();
+      } catch {
+        // ignore
+      }
+    }
+    if (runtime.outboundInputTracks.length && wasMicEnabled) {
+      await setOutboundInputEnabled(true, "audit.mic done");
+    }
+  }
+}
+
+async function startBh2chMonitor() {
+  if (runtime.bh2chMonitor) {
+    return;
+  }
+  if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
+    logEvent("monitor.bh2ch.error", "Browser does not support enumerateDevices/getUserMedia");
+    return;
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const blackHole2chInput = devices.find(
+      (device) =>
+        device.kind === "audioinput" && /blackhole\s*2ch/i.test(device.label ?? ""),
+    );
+    if (!blackHole2chInput?.deviceId) {
+      throw new Error(
+        "BlackHole 2ch input device not found. Grant microphone permission first (any one-shot Start) so device labels are visible.",
+      );
+    }
+
+    const wasGuarded = runtime.outboundOutputGuarded;
+    if (runtime.outbound) {
+      setOutboundOutputGuarded(true, "bh2ch monitor");
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: { exact: blackHole2chInput.deviceId },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
+
+    const ctx = new AudioContext();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+
+    const samples = new Float32Array(analyser.fftSize);
+    let peakSoFar = 0;
+    const timer = window.setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) sum += sample * sample;
+      const rms = Math.sqrt(sum / samples.length);
+      bh2chLiveMeter.value = Math.min(1, rms * 12);
+      if (rms > peakSoFar) {
+        peakSoFar = rms;
+        bh2chLivePeakLabel.textContent = `peak ${peakSoFar.toFixed(4)}`;
+      }
+    }, 100);
+
+    runtime.bh2chMonitor = { stream, ctx, timer, wasGuarded };
+    bh2chLiveMeterCard.hidden = false;
+    bh2chLivePeakLabel.textContent = "peak 0.0000";
+    liveBh2chMonitorButton.textContent = "Stop BlackHole 2ch live monitor";
+    logEvent(
+      "monitor.bh2ch",
+      "started — outbound English is muted while running. Have the partner speak English; if the meter rises, translated Chinese is leaking into BlackHole 2ch.",
+    );
+  } catch (error) {
+    logEvent("monitor.bh2ch.error", error instanceof Error ? error.message : String(error));
+    if (runtime.outbound && !runtime.bh2chMonitor) {
+      setOutboundOutputGuarded(false, "bh2ch monitor failed");
+    }
+  }
+}
+
+async function stopBh2chMonitor(reason = "user") {
+  const monitor = runtime.bh2chMonitor;
+  if (!monitor) {
+    return;
+  }
+  runtime.bh2chMonitor = null;
+  window.clearInterval(monitor.timer);
+  monitor.stream.getTracks().forEach((track) => track.stop());
+  if (monitor.ctx.state !== "closed") {
+    try {
+      await monitor.ctx.close();
+    } catch {
+      // ignore
+    }
+  }
+  if (runtime.outbound && !monitor.wasGuarded) {
+    setOutboundOutputGuarded(false, "bh2ch monitor stopped");
+  }
+  bh2chLiveMeter.value = 0;
+  bh2chLiveMeterCard.hidden = true;
+  liveBh2chMonitorButton.textContent = "Start BlackHole 2ch live monitor";
+  logEvent("monitor.bh2ch", `stopped (${reason})`);
+}
+
+async function logSystemDefaultOutput() {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    logEvent("default.output.error", "enumerateDevices not supported");
+    return;
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const defaultOutput = devices.find(
+      (device) => device.kind === "audiooutput" && device.deviceId === "default",
+    );
+    if (defaultOutput) {
+      logEvent(
+        "default.output",
+        `macOS system default output: "${defaultOutput.label || "unlabeled"}". If this contains "BlackHole" the OS routes anything without setSinkId into LINE's mic.`,
+      );
+    } else {
+      logEvent(
+        "default.output",
+        "No 'default' audiooutput entry exposed by the browser. Open System Settings → Sound → Output to inspect.",
+      );
+    }
+    for (const device of devices) {
+      if (device.kind !== "audiooutput") continue;
+      logEvent(
+        "default.output.detail",
+        `audiooutput deviceId=${device.deviceId || "(empty)"} label="${device.label || "unlabeled"}" groupId=${device.groupId || "(none)"}`,
+      );
+    }
+  } catch (error) {
+    logEvent("default.output.error", error instanceof Error ? error.message : String(error));
+  }
 }
 
 function createToneWavDataUrl({ frequency, durationSeconds }) {
@@ -842,7 +1117,13 @@ async function applyOutputDevice(audio, select, context, policy = {}) {
   }
 
   await audio.setSinkId(select.value);
-  logEvent("audio.output", `${context}: ${label}`);
+  const boundSinkId = audio.sinkId ?? "";
+  if (boundSinkId && boundSinkId !== select.value) {
+    throw new Error(
+      `${context}: requested sinkId ${select.value} but Chrome bound ${boundSinkId}. WebRTC remote streams may be ignoring setSinkId on this Chrome build.`,
+    );
+  }
+  logEvent("audio.output", `${context}: ${label} sinkId=${boundSinkId || select.value}`);
   return true;
 }
 
@@ -1017,6 +1298,7 @@ async function setOutboundInputEnabled(enabled, reason) {
 }
 
 async function stopAll(message, state = "idle") {
+  await stopBh2chMonitor("session stop");
   for (const meter of runtime.meters) {
     window.clearInterval(meter.timer);
     meter.source?.disconnect();
@@ -1080,6 +1362,9 @@ function setControls({ running }) {
   testChineseOutputButton.disabled = false;
   testOutboundButton.disabled = false;
   auditLeakButton.disabled = false;
+  auditMicCaptureButton.disabled = false;
+  liveBh2chMonitorButton.disabled = false;
+  showDefaultOutputButton.disabled = false;
 
   if (!running) {
     updateModeUi();
