@@ -57,6 +57,7 @@ const runtime = {
   outboundInputTracks: [],
   outboundSenders: [],
   outboundReenableTimer: null,
+  outboundOutputGuarded: false,
 };
 
 let diagnostics = createEmptyDiagnostics();
@@ -729,7 +730,9 @@ function applyAudioMix() {
   }
   for (const session of [runtime.oneWay, runtime.outbound, runtime.inbound]) {
     if (session?.translatedAudio) {
-      session.translatedAudio.volume = mix.translatedVolume;
+      session.translatedAudio.volume = session === runtime.outbound && runtime.outboundOutputGuarded
+        ? 0
+        : mix.translatedVolume;
     }
   }
 }
@@ -761,6 +764,7 @@ function handleRealtimeEvent(message, sessionName, transcriptPrefix) {
 
   if (INPUT_TRANSCRIPT_EVENTS.has(event.type) && typeof event.delta === "string") {
     logEvent(`${sessionName}.input`, event.delta);
+    guardOutboundMicDuringInboundPlayback(sessionName, event.type);
     updateDiagnostics();
     return;
   }
@@ -778,7 +782,7 @@ function handleRealtimeEvent(message, sessionName, transcriptPrefix) {
     guardOutboundMicDuringInboundPlayback(sessionName, event.type);
   }
   if (event.type === "output_audio_buffer.stopped") {
-    scheduleOutboundInputReenable(3500, `${sessionName}.${event.type}`);
+    scheduleOutboundInputReenable(10000, `${sessionName}.${event.type}.quiet-window`);
   }
 
   updateDiagnostics();
@@ -790,7 +794,8 @@ function guardOutboundMicDuringInboundPlayback(sessionName, eventType) {
     return;
   }
   void setOutboundInputEnabled(false, `${sessionName}.${eventType}`);
-  scheduleOutboundInputReenable(4500, `${sessionName}.${eventType}.guard-timeout`);
+  setOutboundOutputGuarded(true, `${sessionName}.${eventType}`);
+  scheduleOutboundInputReenable(10000, `${sessionName}.${eventType}.quiet-window`);
 }
 
 function scheduleOutboundInputReenable(delayMs, reason) {
@@ -803,7 +808,18 @@ function scheduleOutboundInputReenable(delayMs, reason) {
   runtime.outboundReenableTimer = window.setTimeout(() => {
     runtime.outboundReenableTimer = null;
     void setOutboundInputEnabled(true, reason);
+    setOutboundOutputGuarded(false, reason);
   }, delayMs);
+}
+
+
+function setOutboundOutputGuarded(guarded, reason) {
+  runtime.outboundOutputGuarded = guarded;
+  if (runtime.outbound?.translatedAudio) {
+    runtime.outbound.translatedAudio.volume = guarded ? 0 : buildAudioMixState(audioMix.value).translatedVolume;
+    runtime.outbound.translatedAudio.muted = guarded;
+  }
+  logEvent("outbound.output", `${guarded ? "muted" : "unmuted"}: ${reason}`);
 }
 
 async function setOutboundInputEnabled(enabled, reason) {
@@ -850,6 +866,7 @@ async function stopAll(message, state = "idle") {
   runtime.inbound = null;
   runtime.outboundInputTracks = [];
   runtime.outboundSenders = [];
+  runtime.outboundOutputGuarded = false;
   if (runtime.outboundReenableTimer) {
     window.clearTimeout(runtime.outboundReenableTimer);
     runtime.outboundReenableTimer = null;

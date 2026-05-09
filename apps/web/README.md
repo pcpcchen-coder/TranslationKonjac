@@ -185,7 +185,7 @@ Check:
 - Do not route Chinese output to BlackHole.
 - Prefer headphones over speakers.
 - Keep outbound and inbound virtual devices separate: `BlackHole 2ch` for outbound, `BlackHole 16ch` for inbound.
-- In two-way mode, the web app includes an echo guard: while inbound English → Chinese playback is active, it temporarily detaches the outbound microphone from the WebRTC sender with `replaceTrack(null)` so the Chinese playback cannot be captured and sent back to the other person. Watch the `Outbound mic` diagnostic row; it should briefly show `muted`/`detached` during inbound playback, then return to `enabled`/`attached`.
+- In two-way mode, the web app includes an echo guard: while inbound English → Chinese playback is active, it temporarily detaches the outbound microphone from the WebRTC sender with `replaceTrack(null)` and mutes the outbound translated-audio output to BlackHole 2ch so buffered/echo audio cannot be sent back to the other person. Watch the `Outbound mic` diagnostic row; it should briefly show `muted`/`detached` during inbound playback, then return to `enabled`/`attached`.
 
 ### Browser cannot choose output device
 
