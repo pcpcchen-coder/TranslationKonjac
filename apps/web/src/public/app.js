@@ -42,6 +42,7 @@ const chunksSent = document.querySelector("#chunksSent");
 const activeInputFrames = document.querySelector("#activeInputFrames");
 const peakInputLevel = document.querySelector("#peakInputLevel");
 const inboundPeakLevel = document.querySelector("#inboundPeakLevel");
+const outboundMicState = document.querySelector("#outboundMicState");
 const outputAudioDeltas = document.querySelector("#outputAudioDeltas");
 const transcriptDeltas = document.querySelector("#transcriptDeltas");
 const lastEventType = document.querySelector("#lastEventType");
@@ -53,6 +54,8 @@ const runtime = {
   streams: [],
   sourceAudio: null,
   meters: [],
+  outboundInputTracks: [],
+  outboundReenableTimer: null,
 };
 
 let diagnostics = createEmptyDiagnostics();
@@ -139,6 +142,8 @@ startTwoWayButton.addEventListener("click", async () => {
     setStatus("Allow microphone access for your Chinese speech", "idle");
     const micStream = await captureMicrophoneAudio("outbound");
     runtime.streams.push(micStream);
+    runtime.outboundInputTracks = micStream.getAudioTracks();
+    setOutboundInputEnabled(true, "ready");
     startInputMeter(micStream, "outbound", inputMeter);
 
     const inboundSource = selectedInboundSourceType();
@@ -746,6 +751,7 @@ function handleRealtimeEvent(message, sessionName, transcriptPrefix) {
   if (OUTPUT_TRANSCRIPT_EVENTS.has(event.type) && typeof event.delta === "string") {
     diagnostics.transcriptDeltas += 1;
     appendTranslatedText(event.delta, transcriptPrefix);
+    guardOutboundMicDuringInboundPlayback(sessionName, event.type);
     updateDiagnostics();
     return;
   }
@@ -759,11 +765,51 @@ function handleRealtimeEvent(message, sessionName, transcriptPrefix) {
   if (
     event.type === "session.created" ||
     event.type === "session.updated" ||
-    event.type === "output_audio_buffer.started"
+    event.type === "output_audio_buffer.started" ||
+    event.type === "output_audio_buffer.stopped"
   ) {
     logEvent(`${sessionName}.${event.type}`, "ok");
   }
 
+  if (event.type === "output_audio_buffer.started") {
+    guardOutboundMicDuringInboundPlayback(sessionName, event.type);
+  }
+  if (event.type === "output_audio_buffer.stopped") {
+    scheduleOutboundInputReenable(500, `${sessionName}.${event.type}`);
+  }
+
+  updateDiagnostics();
+}
+
+
+function guardOutboundMicDuringInboundPlayback(sessionName, eventType) {
+  if (!sessionName.startsWith("inbound")) {
+    return;
+  }
+  setOutboundInputEnabled(false, `${sessionName}.${eventType}`);
+  scheduleOutboundInputReenable(1800, `${sessionName}.${eventType}.guard-timeout`);
+}
+
+function scheduleOutboundInputReenable(delayMs, reason) {
+  if (!runtime.outboundInputTracks.length) {
+    return;
+  }
+  if (runtime.outboundReenableTimer) {
+    window.clearTimeout(runtime.outboundReenableTimer);
+  }
+  runtime.outboundReenableTimer = window.setTimeout(() => {
+    runtime.outboundReenableTimer = null;
+    setOutboundInputEnabled(true, reason);
+  }, delayMs);
+}
+
+function setOutboundInputEnabled(enabled, reason) {
+  for (const track of runtime.outboundInputTracks) {
+    track.enabled = enabled;
+  }
+  diagnostics.outboundMicEnabled = enabled;
+  diagnostics.outboundMicReason = reason;
+  logEvent("outbound.mic", `${enabled ? "enabled" : "muted"}: ${reason}`);
   updateDiagnostics();
 }
 
@@ -789,6 +835,11 @@ async function stopAll(message, state = "idle") {
   runtime.oneWay = null;
   runtime.outbound = null;
   runtime.inbound = null;
+  runtime.outboundInputTracks = [];
+  if (runtime.outboundReenableTimer) {
+    window.clearTimeout(runtime.outboundReenableTimer);
+    runtime.outboundReenableTimer = null;
+  }
 
   if (runtime.sourceAudio) {
     runtime.sourceAudio.pause();
@@ -865,6 +916,8 @@ function createEmptyDiagnostics() {
     lastEventType: "none",
     peakInputLevel: 0,
     inboundPeakLevel: 0,
+    outboundMicEnabled: true,
+    outboundMicReason: "idle",
     remoteAudioTracks: 0,
     transcriptDeltas: 0,
   };
@@ -884,6 +937,7 @@ function updateDiagnostics() {
   queueProgress.value = Math.min(1, diagnostics.connectedSessions.size / Math.max(1, selectedMode() === "two-way" ? 2 : 1));
   peakInputLevel.textContent = diagnostics.peakInputLevel.toFixed(3);
   inboundPeakLevel.textContent = diagnostics.inboundPeakLevel.toFixed(3);
+  outboundMicState.textContent = `${diagnostics.outboundMicEnabled ? "enabled" : "muted"} (${diagnostics.outboundMicReason})`;
   outputAudioDeltas.textContent = String(diagnostics.remoteAudioTracks);
   transcriptDeltas.textContent = String(diagnostics.transcriptDeltas);
   lastEventType.textContent = diagnostics.lastEventType;
