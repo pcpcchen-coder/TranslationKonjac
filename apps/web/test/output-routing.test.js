@@ -22,20 +22,12 @@ test("isBlackHoleLabel matches BlackHole 2ch and 16ch case-insensitively", () =>
   assert.equal(isBlackHoleLabel(undefined), false);
 });
 
-test("pickPreferredOutboundDevice keeps a previous BlackHole 2ch value", () => {
-  const result = pickPreferredOutboundDevice({
-    options: [SYSTEM_DEFAULT, SPEAKERS, BLACKHOLE_2CH, BLACKHOLE_16CH],
-    previousValue: BLACKHOLE_2CH.value,
-  });
-  assert.equal(result, BLACKHOLE_2CH.value);
-});
-
-test("pickPreferredOutboundDevice ignores a non-BlackHole previous value", () => {
+test("pickPreferredOutboundDevice keeps a matching previous value", () => {
   const result = pickPreferredOutboundDevice({
     options: [SYSTEM_DEFAULT, SPEAKERS, BLACKHOLE_2CH, BLACKHOLE_16CH],
     previousValue: SPEAKERS.value,
   });
-  assert.equal(result, BLACKHOLE_2CH.value);
+  assert.equal(result, SPEAKERS.value);
 });
 
 test("pickPreferredOutboundDevice prefers BlackHole 2ch over 16ch when no previous value", () => {
