@@ -128,7 +128,6 @@ This means:
    - Strict isolation mode blocks startup if this output is empty/default or any BlackHole device.
 7. Click `Start two-way call mode`.
 8. Allow microphone permission if prompted.
-9. Safe mode is push-to-talk: keep your hands off `Hold to talk to them` while listening. Hold it only while you speak Chinese, then release immediately.
 
 ### Operating checklist before a LINE call
 
@@ -186,7 +185,7 @@ Check:
 - Do not route Chinese output to BlackHole.
 - Prefer headphones over speakers.
 - Keep outbound and inbound virtual devices separate: `BlackHole 2ch` for outbound, `BlackHole 16ch` for inbound.
-- In two-way mode, safe mode is push-to-talk. By default the outbound microphone is detached from the WebRTC sender with `replaceTrack(null)` and outbound translated audio to BlackHole 2ch is muted. Hold `Hold to talk to them` only while you speak Chinese; release it to return to listen-only mode. Watch the `Outbound mic` diagnostic row; it should show detached while listening and attached only while holding push-to-talk.
+- In two-way mode, the web app includes an echo guard: while inbound English → Chinese playback is active, it temporarily detaches the outbound microphone from the WebRTC sender with `replaceTrack(null)` and mutes the outbound translated-audio output to BlackHole 2ch so buffered/echo audio cannot be sent back to the other person. Watch the `Outbound mic` diagnostic row; it should briefly show `muted`/`detached` during inbound playback, then return to `enabled`/`attached`.
 
 ### Browser cannot choose output device
 
