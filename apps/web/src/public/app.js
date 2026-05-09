@@ -786,6 +786,7 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
   applyAudioMix();
 
   let remoteAudioContext = null;
+  let remoteDummyAudio = null;
 
   peerConnection.onconnectionstatechange = () => {
     diagnostics.connectionState = `${name}: ${peerConnection.connectionState}`;
@@ -810,6 +811,31 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
     diagnostics.remoteAudioTracks += 1;
     void (async () => {
       try {
+        const remoteStream = streams[0];
+
+        // Workaround for a long-standing Chrome bug: WebRTC remote audio
+        // tracks do not actually pump audio through createMediaStreamSource
+        // unless the same MediaStream is also attached to an
+        // HTMLMediaElement whose pipeline registers ownership of the
+        // track. The dummy element stays muted=true (no sink output) and
+        // exists purely to keep the WebRTC pipeline running so Web Audio
+        // can read the stream.
+        const dummy = new Audio();
+        dummy.muted = true;
+        dummy.autoplay = true;
+        dummy.playsInline = true;
+        dummy.srcObject = remoteStream;
+        try {
+          await dummy.play();
+        } catch {
+          // Muted autoplay should be allowed; ignore if it isn't.
+        }
+        if (remoteDummyAudio) {
+          remoteDummyAudio.pause();
+          remoteDummyAudio.srcObject = null;
+        }
+        remoteDummyAudio = dummy;
+
         // Workaround for Chrome's WebRTC implicit playout: when an <audio>
         // element points srcObject at a WebRTC remote MediaStream and uses
         // setSinkId, some Chrome builds still leak the audio out a second
@@ -836,7 +862,7 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
           `${name}.audio.context`,
           `state=${ctx.state} sampleRate=${ctx.sampleRate}`,
         );
-        const source = ctx.createMediaStreamSource(streams[0]);
+        const source = ctx.createMediaStreamSource(remoteStream);
         const destination = ctx.createMediaStreamDestination();
         source.connect(destination);
         if (remoteAudioContext && remoteAudioContext.state !== "closed") {
@@ -921,6 +947,11 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
         }
       }
       remoteAudioContext = null;
+      if (remoteDummyAudio) {
+        remoteDummyAudio.pause();
+        remoteDummyAudio.srcObject = null;
+        remoteDummyAudio = null;
+      }
     },
   };
 }
