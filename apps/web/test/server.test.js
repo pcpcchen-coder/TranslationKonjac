@@ -34,6 +34,7 @@ test("serves the browser app from the root route", async () => {
     assert.match(body, /Audio input device, e.g. BlackHole 16ch from LINE app/);
     assert.match(body, /Their voice inbound audio/);
     assert.match(body, /Strict isolation/);
+    assert.match(body, /Test Chinese output/);
     assert.match(body, /Translated audio output/);
     assert.match(body, /option value="en" selected/);
     assert.doesNotMatch(body, /Start translating</);
@@ -74,6 +75,7 @@ test("serves browser app code that connects to translation over WebRTC", async (
     assert.match(body, /buildRawAudioInputMediaOptions/);
     assert.match(body, /assertTwoWayIsolation/);
     assert.match(body, /createTranslatedAudioSink/);
+    assert.match(body, /playOutputTestTone/);
     assert.match(body, /realtime\/translations\/calls/);
     assert.doesNotMatch(body, /new WebSocket/);
   });

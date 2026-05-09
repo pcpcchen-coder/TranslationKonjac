@@ -513,3 +513,8 @@ ol {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+
+.mini-button {
+  min-height: 40px;
+  width: 100%;
+}

@@ -19,6 +19,7 @@ const outputDevice = document.querySelector("#outputDevice");
 const inboundSourceType = document.querySelector("#inboundSourceType");
 const inboundInputDevice = document.querySelector("#inboundInputDevice");
 const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
+const testChineseOutputButton = document.querySelector("#testChineseOutputButton");
 const twoWayPanel = document.querySelector("#twoWayPanel");
 const startButton = document.querySelector("#startButton");
 const startTwoWayButton = document.querySelector("#startTwoWayButton");
@@ -82,6 +83,10 @@ inboundOutputDevice.addEventListener("change", () => {
 });
 
 inboundSourceType.addEventListener("change", updateModeUi);
+
+testChineseOutputButton.addEventListener("click", () => {
+  void playOutputTestTone(inboundOutputDevice, "Chinese output test");
+});
 
 navigator.mediaDevices?.addEventListener?.("devicechange", () => {
   void refreshOutputDevices();
@@ -257,6 +262,70 @@ function selectedOptionLabel(select) {
 
 function isBlackHoleLabel(label) {
   return /blackhole/i.test(label);
+}
+
+
+async function playOutputTestTone(select, context) {
+  try {
+    if (!select.value) {
+      throw new Error("Choose an explicit headphones/speakers output first; System default is blocked for strict isolation.");
+    }
+    if (isBlackHoleLabel(selectedOptionLabel(select))) {
+      throw new Error("Chinese output test blocked: choose real headphones/speakers, not BlackHole.");
+    }
+
+    const audio = createTranslatedAudioSink(`${context} tone`);
+    audio.volume = 0.5;
+    audio.src = createToneWavDataUrl({ frequency: 880, durationSeconds: 0.8 });
+    await applyOutputDevice(audio, select, context);
+    await audio.play();
+    logEvent("audio.output.test", `${context}: ${selectedOptionLabel(select)}`);
+  } catch (error) {
+    logEvent("audio.output.test.error", error instanceof Error ? error.message : String(error));
+  }
+}
+
+function createToneWavDataUrl({ frequency, durationSeconds }) {
+  const sampleRate = 48000;
+  const sampleCount = Math.floor(sampleRate * durationSeconds);
+  const bytesPerSample = 2;
+  const channelCount = 1;
+  const dataBytes = sampleCount * bytesPerSample * channelCount;
+  const buffer = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buffer);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channelCount * bytesPerSample, true);
+  view.setUint16(32, channelCount * bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, dataBytes, true);
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const envelope = Math.min(1, index / 1200, (sampleCount - index) / 1200);
+    const sample = Math.sin((2 * Math.PI * frequency * index) / sampleRate) * 0.35 * envelope;
+    view.setInt16(44 + index * 2, Math.max(-1, Math.min(1, sample)) * 0x7fff, true);
+  }
+
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return `data:audio/wav;base64,${btoa(binary)}`;
+}
+
+function writeAscii(view, offset, text) {
+  for (let index = 0; index < text.length; index += 1) {
+    view.setUint8(offset + index, text.charCodeAt(index));
+  }
 }
 
 async function createSession(language) {
@@ -727,6 +796,7 @@ function setControls({ running }) {
   inboundSourceType.disabled = running;
   inboundInputDevice.disabled = running;
   inboundOutputDevice.disabled = running;
+  testChineseOutputButton.disabled = running;
 
   if (!running) {
     updateModeUi();
