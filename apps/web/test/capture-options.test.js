@@ -5,6 +5,7 @@ import {
   buildAudioInputMediaOptions,
   buildDisplayMediaOptions,
   buildMicrophoneMediaOptions,
+  buildRawAudioInputMediaOptions,
 } from "../src/public/capture-options.js";
 
 test("buildDisplayMediaOptions requests local playback suppression when supported", () => {
@@ -37,4 +38,15 @@ test("buildAudioInputMediaOptions can target a selected input device", () => {
   assert.equal(options.video, false);
   assert.deepEqual(options.audio.deviceId, { exact: "device-123" });
   assert.equal(options.audio.echoCancellation, true);
+});
+
+
+test("buildRawAudioInputMediaOptions disables browser audio processing for virtual devices", () => {
+  const options = buildRawAudioInputMediaOptions("blackhole-16ch");
+
+  assert.equal(options.video, false);
+  assert.deepEqual(options.audio.deviceId, { exact: "blackhole-16ch" });
+  assert.equal(options.audio.echoCancellation, false);
+  assert.equal(options.audio.noiseSuppression, false);
+  assert.equal(options.audio.autoGainControl, false);
 });

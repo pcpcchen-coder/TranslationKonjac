@@ -148,6 +148,10 @@
           <span id="inputMeterLabel">Captured tab audio</span>
           <meter id="inputMeter" min="0" max="1" value="0"></meter>
         </div>
+        <div class="meter-card" id="inboundMeterCard" hidden>
+          <span>Their voice inbound audio</span>
+          <meter id="inboundMeter" min="0" max="1" value="0"></meter>
+        </div>
         <div class="meter-card">
           <span>WebRTC connection</span>
           <progress id="queueProgress" max="1" value="0"></progress>
@@ -178,8 +182,12 @@
               <dd id="activeInputFrames">connecting</dd>
             </div>
             <div>
-              <dt>Peak level</dt>
+              <dt>Your mic peak</dt>
               <dd id="peakInputLevel">0.000</dd>
+            </div>
+            <div>
+              <dt>Their voice peak</dt>
+              <dd id="inboundPeakLevel">0.000</dd>
             </div>
             <div>
               <dt>Remote audio</dt>

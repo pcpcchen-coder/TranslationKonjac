@@ -3,6 +3,7 @@ import {
   buildAudioInputMediaOptions,
   buildDisplayMediaOptions,
   buildMicrophoneMediaOptions,
+  buildRawAudioInputMediaOptions,
 } from "/capture-options.js";
 
 const TRANSLATION_CALL_URL =
@@ -30,6 +31,8 @@ const statusDot = document.querySelector("#statusDot");
 const statusText = document.querySelector("#statusText");
 const inputMeterLabel = document.querySelector("#inputMeterLabel");
 const inputMeter = document.querySelector("#inputMeter");
+const inboundMeterCard = document.querySelector("#inboundMeterCard");
+const inboundMeter = document.querySelector("#inboundMeter");
 const queueProgress = document.querySelector("#queueProgress");
 const translatedTranscript = document.querySelector("#translatedTranscript");
 const eventLog = document.querySelector("#eventLog");
@@ -37,6 +40,7 @@ const captureState = document.querySelector("#captureState");
 const chunksSent = document.querySelector("#chunksSent");
 const activeInputFrames = document.querySelector("#activeInputFrames");
 const peakInputLevel = document.querySelector("#peakInputLevel");
+const inboundPeakLevel = document.querySelector("#inboundPeakLevel");
 const outputAudioDeltas = document.querySelector("#outputAudioDeltas");
 const transcriptDeltas = document.querySelector("#transcriptDeltas");
 const lastEventType = document.querySelector("#lastEventType");
@@ -95,7 +99,7 @@ startButton.addEventListener("click", async () => {
     runtime.streams.push(stream);
     await refreshOutputDevices({ preferBlackHole: sourceType === "microphone" });
     startSourceAudio(stream, sourceType);
-    startInputMeter(stream, "one-way");
+    startInputMeter(stream, "one-way", inputMeter);
 
     setStatus("Creating Realtime Translation session", "idle");
     const session = await createSession(targetLanguage.value);
@@ -128,7 +132,7 @@ startTwoWayButton.addEventListener("click", async () => {
     setStatus("Allow microphone access for your Chinese speech", "idle");
     const micStream = await captureMicrophoneAudio("outbound");
     runtime.streams.push(micStream);
-    startInputMeter(micStream, "outbound");
+    startInputMeter(micStream, "outbound", inputMeter);
 
     const inboundSource = selectedInboundSourceType();
     setStatus(
@@ -139,6 +143,7 @@ startTwoWayButton.addEventListener("click", async () => {
     );
     const inboundStream = await captureInboundAudio("inbound");
     runtime.streams.push(inboundStream);
+    startInputMeter(inboundStream, "inbound", inboundMeter);
 
     setStatus("Creating outbound Chinese → English session", "idle");
     const outboundSession = await createSession("en");
@@ -191,6 +196,7 @@ function updateModeUi() {
   const isMic = sourceType === "microphone";
 
   twoWayPanel.hidden = !twoWay;
+  inboundMeterCard.hidden = !twoWay;
   inboundInputDevice.hidden = !twoWay || selectedInboundSourceType() !== "device";
   startButton.hidden = twoWay;
   startTwoWayButton.hidden = !twoWay;
@@ -391,7 +397,7 @@ async function captureAudioInputDevice(label = "audio-input", deviceId = "") {
   }
 
   const stream = await navigator.mediaDevices.getUserMedia(
-    buildAudioInputMediaOptions(deviceId),
+    buildRawAudioInputMediaOptions(deviceId),
   );
 
   const audioTracks = stream.getAudioTracks();
@@ -526,7 +532,7 @@ async function applyOutputDevice(audio, select, context) {
   }
 }
 
-function startInputMeter(stream, label) {
+function startInputMeter(stream, label, meterElement = inputMeter) {
   const context = new AudioContext();
   const source = context.createMediaStreamSource(stream);
   const analyser = context.createAnalyser();
@@ -541,9 +547,14 @@ function startInputMeter(stream, label) {
       sum += sample * sample;
     }
     const rms = Math.sqrt(sum / samples.length);
-    inputMeter.value = Math.min(1, rms * 12);
-    diagnostics.peakInputLevel = Math.max(diagnostics.peakInputLevel, rms);
-    peakInputLevel.textContent = diagnostics.peakInputLevel.toFixed(3);
+    meterElement.value = Math.min(1, rms * 12);
+    if (label === "inbound") {
+      diagnostics.inboundPeakLevel = Math.max(diagnostics.inboundPeakLevel, rms);
+      inboundPeakLevel.textContent = diagnostics.inboundPeakLevel.toFixed(3);
+    } else {
+      diagnostics.peakInputLevel = Math.max(diagnostics.peakInputLevel, rms);
+      peakInputLevel.textContent = diagnostics.peakInputLevel.toFixed(3);
+    }
   }, 100);
 
   runtime.meters.push({ context, source, analyser, timer, label });
@@ -660,6 +671,7 @@ async function stopAll(message, state = "idle") {
   runtime.streams = [];
 
   inputMeter.value = 0;
+  inboundMeter.value = 0;
   queueProgress.value = 0;
   setControls({ running: false });
   setStatus(message, state);
@@ -720,6 +732,7 @@ function createEmptyDiagnostics() {
     connectedSessions: new Set(),
     lastEventType: "none",
     peakInputLevel: 0,
+    inboundPeakLevel: 0,
     remoteAudioTracks: 0,
     transcriptDeltas: 0,
   };
@@ -729,6 +742,7 @@ function resetDiagnostics() {
   diagnostics = createEmptyDiagnostics();
   captureState.textContent = "Starting";
   eventLog.textContent = "";
+  inboundMeterCard.hidden = selectedMode() !== "two-way";
   updateDiagnostics();
 }
 
@@ -737,6 +751,7 @@ function updateDiagnostics() {
   activeInputFrames.textContent = diagnostics.dataChannelState;
   queueProgress.value = Math.min(1, diagnostics.connectedSessions.size / Math.max(1, selectedMode() === "two-way" ? 2 : 1));
   peakInputLevel.textContent = diagnostics.peakInputLevel.toFixed(3);
+  inboundPeakLevel.textContent = diagnostics.inboundPeakLevel.toFixed(3);
   outputAudioDeltas.textContent = String(diagnostics.remoteAudioTracks);
   transcriptDeltas.textContent = String(diagnostics.transcriptDeltas);
   lastEventType.textContent = diagnostics.lastEventType;
