@@ -16,7 +16,6 @@ const modeInputs = [...document.querySelectorAll("input[name='translationMode']"
 const targetLanguage = document.querySelector("#targetLanguage");
 const audioSourceInputs = [...document.querySelectorAll("input[name='audioSource']")];
 const outputDevice = document.querySelector("#outputDevice");
-const outboundInputDevice = document.querySelector("#outboundInputDevice");
 const inboundSourceType = document.querySelector("#inboundSourceType");
 const inboundInputDevice = document.querySelector("#inboundInputDevice");
 const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
@@ -172,7 +171,7 @@ startTwoWayButton.addEventListener("click", async () => {
     assertTwoWayIsolation();
 
     setStatus("Allow microphone access for your Chinese speech", "idle");
-    const micStream = await captureOutboundMicrophoneAudio("outbound");
+    const micStream = await captureMicrophoneAudio("outbound");
     runtime.streams.push(micStream);
     runtime.outboundInputTracks = micStream.getAudioTracks();
     startInputMeter(micStream, "outbound", inputMeter);
@@ -279,20 +278,7 @@ function createTranslatedAudioSink(name) {
 
 function assertTwoWayIsolation() {
   const outboundLabel = selectedOptionLabel(outputDevice);
-  const outboundInputLabel = selectedOptionLabel(outboundInputDevice);
   const inboundOutputLabel = selectedOptionLabel(inboundOutputDevice);
-
-  if (!outboundInputDevice.value) {
-    throw new Error(
-      "Strict isolation blocked startup: choose an explicit real microphone/headset for Your microphone input; Default microphone is not allowed.",
-    );
-  }
-
-  if (isBlackHoleLabel(outboundInputLabel)) {
-    throw new Error(
-      "Strict isolation blocked startup: Your microphone input cannot be BlackHole. Choose OpenRun Pro 2 or another real microphone.",
-    );
-  }
 
   if (!outputDevice.value || !/blackhole\s*2ch/i.test(outboundLabel)) {
     throw new Error(
@@ -565,13 +551,13 @@ async function captureMicrophoneAudio(label = "microphone") {
 }
 
 
-async function captureAudioInputDevice(label = "audio-input", deviceId = "", { raw = true, select = inboundInputDevice } = {}) {
+async function captureAudioInputDevice(label = "audio-input", deviceId = "") {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("This browser does not support audio input capture.");
   }
 
   const stream = await navigator.mediaDevices.getUserMedia(
-    raw ? buildRawAudioInputMediaOptions(deviceId) : buildAudioInputMediaOptions(deviceId),
+    buildRawAudioInputMediaOptions(deviceId),
   );
 
   const audioTracks = stream.getAudioTracks();
@@ -588,7 +574,7 @@ async function captureAudioInputDevice(label = "audio-input", deviceId = "", { r
     { once: true },
   );
 
-  const selectedLabel = select.selectedOptions[0]?.textContent ?? "selected input";
+  const selectedLabel = inboundInputDevice.selectedOptions[0]?.textContent ?? "selected input";
   captureState.textContent = `${label}: device=${selectedLabel}`;
   logEvent(`${label}.capture.started`, `input device=${selectedLabel}`);
 
@@ -602,11 +588,6 @@ function captureInboundAudio(label = "inbound") {
   return captureTabAudio(label);
 }
 
-
-async function captureOutboundMicrophoneAudio(label = "outbound") {
-  return captureAudioInputDevice(label, outboundInputDevice.value, { raw: false, select: outboundInputDevice });
-}
-
 function captureAudioSource(sourceType, label) {
   return sourceType === "microphone" ? captureMicrophoneAudio(label) : captureTabAudio(label);
 }
@@ -617,7 +598,6 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
   }
 
   const previousOutput = outputDevice.value;
-  const previousOutboundInput = outboundInputDevice.value;
   const previousInbound = inboundOutputDevice.value;
   const previousInboundInput = inboundInputDevice.value;
   let devices = [];
@@ -632,13 +612,11 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
   const inputs = devices.filter((device) => device.kind === "audioinput");
   fillOutputSelect(outputDevice, outputs);
   fillOutputSelect(inboundOutputDevice, outputs);
-  fillInputSelect(outboundInputDevice, inputs, "Default microphone");
-  fillInputSelect(inboundInputDevice, inputs, "Default audio input");
+  fillInputSelect(inboundInputDevice, inputs);
 
   restoreOutputSelection(outputDevice, previousOutput, { preferBlackHole });
   restoreOutputSelection(inboundOutputDevice, previousInbound, { preferBlackHole: false });
-  restoreInputSelection(outboundInputDevice, previousOutboundInput, { preferBlackHole16: false, preferRealMic: true });
-  restoreInputSelection(inboundInputDevice, previousInboundInput, { preferBlackHole16: true, preferRealMic: false });
+  restoreInputSelection(inboundInputDevice, previousInboundInput, { preferBlackHole16: true });
 }
 
 function fillOutputSelect(select, outputs) {
@@ -652,8 +630,8 @@ function fillOutputSelect(select, outputs) {
   }
 }
 
-function fillInputSelect(select, inputs, defaultLabel = "Default audio input") {
-  select.replaceChildren(new Option(defaultLabel, ""));
+function fillInputSelect(select, inputs) {
+  select.replaceChildren(new Option("Default audio input", ""));
   for (const [index, device] of inputs.entries()) {
     if (!device.deviceId || device.deviceId === "default") {
       continue;
@@ -679,7 +657,7 @@ function restoreOutputSelection(select, previousValue, { preferBlackHole }) {
   }
 }
 
-function restoreInputSelection(select, previousValue, { preferBlackHole16, preferRealMic }) {
+function restoreInputSelection(select, previousValue, { preferBlackHole16 }) {
   const values = new Set([...select.options].map((option) => option.value));
   if (previousValue && values.has(previousValue)) {
     select.value = previousValue;
@@ -691,15 +669,6 @@ function restoreInputSelection(select, previousValue, { preferBlackHole16, prefe
     );
     if (blackHole16Option) {
       select.value = blackHole16Option.value;
-      return;
-    }
-  }
-  if (preferRealMic) {
-    const realMicOption = [...select.options].find((option) =>
-      option.value && !isBlackHoleLabel(option.textContent ?? ""),
-    );
-    if (realMicOption) {
-      select.value = realMicOption.value;
     }
   }
 }
@@ -977,7 +946,6 @@ function setControls({ running }) {
   startTwoWayButton.disabled = running;
   stopButton.disabled = !running;
   outputDevice.disabled = running;
-  outboundInputDevice.disabled = running;
   inboundSourceType.disabled = running;
   inboundInputDevice.disabled = running;
   inboundOutputDevice.disabled = running;
