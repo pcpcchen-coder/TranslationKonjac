@@ -55,6 +55,7 @@ const runtime = {
   sourceAudio: null,
   meters: [],
   outboundInputTracks: [],
+  outboundSenders: [],
   outboundReenableTimer: null,
 };
 
@@ -143,7 +144,6 @@ startTwoWayButton.addEventListener("click", async () => {
     const micStream = await captureMicrophoneAudio("outbound");
     runtime.streams.push(micStream);
     runtime.outboundInputTracks = micStream.getAudioTracks();
-    setOutboundInputEnabled(true, "ready");
     startInputMeter(micStream, "outbound", inputMeter);
 
     const inboundSource = selectedInboundSourceType();
@@ -167,6 +167,8 @@ startTwoWayButton.addEventListener("click", async () => {
       transcriptPrefix: "To them: ",
       outputPolicy: { required: true, forbidBlackHole: false, requireBlackHole2ch: true },
     });
+    runtime.outboundSenders = runtime.outbound.audioSenders;
+    await setOutboundInputEnabled(true, "ready");
 
     setStatus("Creating inbound English → Chinese session", "idle");
     const inboundSession = await createSession("zh");
@@ -413,8 +415,9 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
   };
   dataChannel.onmessage = (message) => handleRealtimeEvent(message, name, transcriptPrefix);
 
+  const audioSenders = [];
   for (const track of stream.getAudioTracks()) {
-    peerConnection.addTrack(track, stream);
+    audioSenders.push(peerConnection.addTrack(track, stream));
   }
 
   const offer = await peerConnection.createOffer();
@@ -440,7 +443,7 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
   });
 
   logEvent(`${name}.webrtc.offer`, `connected for ${session.targetLanguage}`);
-  return { name, peerConnection, dataChannel, translatedAudio };
+  return { name, peerConnection, dataChannel, translatedAudio, audioSenders };
 }
 
 async function captureTabAudio(label = "tab") {
@@ -775,7 +778,7 @@ function handleRealtimeEvent(message, sessionName, transcriptPrefix) {
     guardOutboundMicDuringInboundPlayback(sessionName, event.type);
   }
   if (event.type === "output_audio_buffer.stopped") {
-    scheduleOutboundInputReenable(500, `${sessionName}.${event.type}`);
+    scheduleOutboundInputReenable(3500, `${sessionName}.${event.type}`);
   }
 
   updateDiagnostics();
@@ -786,8 +789,8 @@ function guardOutboundMicDuringInboundPlayback(sessionName, eventType) {
   if (!sessionName.startsWith("inbound")) {
     return;
   }
-  setOutboundInputEnabled(false, `${sessionName}.${eventType}`);
-  scheduleOutboundInputReenable(1800, `${sessionName}.${eventType}.guard-timeout`);
+  void setOutboundInputEnabled(false, `${sessionName}.${eventType}`);
+  scheduleOutboundInputReenable(4500, `${sessionName}.${eventType}.guard-timeout`);
 }
 
 function scheduleOutboundInputReenable(delayMs, reason) {
@@ -799,17 +802,27 @@ function scheduleOutboundInputReenable(delayMs, reason) {
   }
   runtime.outboundReenableTimer = window.setTimeout(() => {
     runtime.outboundReenableTimer = null;
-    setOutboundInputEnabled(true, reason);
+    void setOutboundInputEnabled(true, reason);
   }, delayMs);
 }
 
-function setOutboundInputEnabled(enabled, reason) {
-  for (const track of runtime.outboundInputTracks) {
+async function setOutboundInputEnabled(enabled, reason) {
+  const tracks = runtime.outboundInputTracks;
+  const senders = runtime.outboundSenders;
+
+  for (const track of tracks) {
     track.enabled = enabled;
   }
+
+  await Promise.all(
+    senders.map((sender, index) =>
+      sender.replaceTrack(enabled ? tracks[index] ?? tracks[0] ?? null : null),
+    ),
+  );
+
   diagnostics.outboundMicEnabled = enabled;
   diagnostics.outboundMicReason = reason;
-  logEvent("outbound.mic", `${enabled ? "enabled" : "muted"}: ${reason}`);
+  logEvent("outbound.mic", `${enabled ? "attached" : "detached"}: ${reason}`);
   updateDiagnostics();
 }
 
@@ -836,6 +849,7 @@ async function stopAll(message, state = "idle") {
   runtime.outbound = null;
   runtime.inbound = null;
   runtime.outboundInputTracks = [];
+  runtime.outboundSenders = [];
   if (runtime.outboundReenableTimer) {
     window.clearTimeout(runtime.outboundReenableTimer);
     runtime.outboundReenableTimer = null;
