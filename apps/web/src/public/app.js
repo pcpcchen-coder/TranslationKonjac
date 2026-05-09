@@ -25,6 +25,8 @@ const inboundSourceType = document.querySelector("#inboundSourceType");
 const inboundInputDevice = document.querySelector("#inboundInputDevice");
 const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
 const testChineseOutputButton = document.querySelector("#testChineseOutputButton");
+const testOutboundButton = document.querySelector("#testOutboundButton");
+const auditLeakButton = document.querySelector("#auditLeakButton");
 const twoWayPanel = document.querySelector("#twoWayPanel");
 const startButton = document.querySelector("#startButton");
 const startTwoWayButton = document.querySelector("#startTwoWayButton");
@@ -95,7 +97,22 @@ inboundOutputDevice.addEventListener("change", () => {
 inboundSourceType.addEventListener("change", updateModeUi);
 
 testChineseOutputButton.addEventListener("click", () => {
-  void playOutputTestTone(inboundOutputDevice, "Chinese output test");
+  void playOutputTestTone(inboundOutputDevice, "Chinese output test (you should hear)", {
+    policy: { required: true, forbidBlackHole: true },
+    frequency: 880,
+  });
+});
+
+testOutboundButton.addEventListener("click", () => {
+  void playOutputTestTone(outputDevice, "Outbound test (partner should hear)", {
+    policy: { required: true, requireBlackHole2ch: true },
+    frequency: 440,
+    durationSeconds: 1.0,
+  });
+});
+
+auditLeakButton.addEventListener("click", () => {
+  void auditInboundLeak();
 });
 
 navigator.mediaDevices?.addEventListener?.("devicechange", () => {
@@ -290,25 +307,142 @@ function isBlackHoleLabel(label) {
 }
 
 
-async function playOutputTestTone(select, context) {
+async function playOutputTestTone(
+  select,
+  context,
+  { policy = { required: true, forbidBlackHole: true }, frequency = 880, durationSeconds = 0.8 } = {},
+) {
   try {
-    if (!select.value) {
-      throw new Error("Choose an explicit headphones/speakers output first; System default is blocked for strict isolation.");
-    }
-    if (isBlackHoleLabel(selectedOptionLabel(select))) {
-      throw new Error("Chinese output test blocked: choose real headphones/speakers, not BlackHole.");
-    }
-
     const audio = createTranslatedAudioSink(`${context} tone`);
     audio.volume = 0.5;
-    audio.src = createToneWavDataUrl({ frequency: 880, durationSeconds: 0.8 });
-    await applyOutputDevice(audio, select, context, { required: true, forbidBlackHole: true });
+    audio.src = createToneWavDataUrl({ frequency, durationSeconds });
+    await applyOutputDevice(audio, select, context, policy);
     audio.muted = false;
     await audio.play();
-    logEvent("audio.output.test", `${context}: ${selectedOptionLabel(select)}`);
+    logEvent("audio.output.test", `${context}: ${selectedOptionLabel(select)} @${frequency}Hz`);
   } catch (error) {
     logEvent("audio.output.test.error", error instanceof Error ? error.message : String(error));
   }
+}
+
+async function auditInboundLeak() {
+  if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
+    logEvent("audit.error", "Browser does not support enumerateDevices/getUserMedia");
+    return;
+  }
+
+  let monitorStream;
+  let audioContext;
+  const wasGuarded = runtime.outboundOutputGuarded;
+
+  try {
+    if (!inboundOutputDevice.value) {
+      throw new Error("Choose an explicit 'Their voice → Chinese output' device first.");
+    }
+    if (isBlackHoleLabel(selectedOptionLabel(inboundOutputDevice))) {
+      throw new Error("Inbound output is a BlackHole device; routing is already misconfigured.");
+    }
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const blackHole2chInput = devices.find(
+      (device) =>
+        device.kind === "audioinput" && /blackhole\s*2ch/i.test(device.label ?? ""),
+    );
+    if (!blackHole2chInput?.deviceId) {
+      throw new Error(
+        "BlackHole 2ch input device not found. Grant microphone permission first (any one-shot Start) so device labels are visible.",
+      );
+    }
+
+    if (runtime.outbound) {
+      setOutboundOutputGuarded(true, "audit");
+    }
+
+    monitorStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: { exact: blackHole2chInput.deviceId },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
+
+    audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(monitorStream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 4096;
+    source.connect(analyser);
+
+    const samples = new Float32Array(analyser.fftSize);
+    const measureRms = () => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) sum += sample * sample;
+      return Math.sqrt(sum / samples.length);
+    };
+
+    await sleep(500);
+    let baseline = 0;
+    for (let i = 0; i < 5; i += 1) {
+      baseline = Math.max(baseline, measureRms());
+      await sleep(60);
+    }
+    logEvent("audit.baseline", `BlackHole 2ch idle peak RMS: ${baseline.toFixed(4)}`);
+
+    const tone = createTranslatedAudioSink("audit tone");
+    tone.volume = 0.6;
+    tone.src = createToneWavDataUrl({ frequency: 660, durationSeconds: 1.5 });
+    await applyOutputDevice(tone, inboundOutputDevice, "audit (inbound sink)", {
+      required: true,
+      forbidBlackHole: true,
+    });
+    tone.muted = false;
+    await tone.play();
+
+    await sleep(250);
+    let peak = 0;
+    for (let i = 0; i < 12; i += 1) {
+      peak = Math.max(peak, measureRms());
+      await sleep(80);
+    }
+    logEvent("audit.peak", `BlackHole 2ch peak RMS while inbound tone playing: ${peak.toFixed(4)}`);
+
+    const delta = peak - baseline;
+    const leakThreshold = 0.01;
+    if (delta > leakThreshold) {
+      logEvent(
+        "audit.result",
+        `LEAK DETECTED (delta=${delta.toFixed(4)}). Audio sent to "${selectedOptionLabel(
+          inboundOutputDevice,
+        )}" is reaching BlackHole 2ch. Most likely cause: macOS Multi-Output or Aggregate Device. Open Audio MIDI Setup and inspect the device.`,
+      );
+    } else {
+      logEvent(
+        "audit.result",
+        `OK (delta=${delta.toFixed(4)}). Inbound sink does not leak into BlackHole 2ch.`,
+      );
+    }
+  } catch (error) {
+    logEvent("audit.error", error instanceof Error ? error.message : String(error));
+  } finally {
+    if (monitorStream) {
+      monitorStream.getTracks().forEach((track) => track.stop());
+    }
+    if (audioContext && audioContext.state !== "closed") {
+      try {
+        await audioContext.close();
+      } catch {
+        // ignore
+      }
+    }
+    if (runtime.outbound && !wasGuarded) {
+      setOutboundOutputGuarded(false, "audit done");
+    }
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function createToneWavDataUrl({ frequency, durationSeconds }) {
@@ -941,7 +1075,11 @@ function setControls({ running }) {
   inboundSourceType.disabled = running;
   inboundInputDevice.disabled = running;
   inboundOutputDevice.disabled = running;
-  testChineseOutputButton.disabled = running;
+  // Keep the diagnostic buttons usable during an active session so the user
+  // can run them while still on a live LINE call.
+  testChineseOutputButton.disabled = false;
+  testOutboundButton.disabled = false;
+  auditLeakButton.disabled = false;
 
   if (!running) {
     updateModeUi();
