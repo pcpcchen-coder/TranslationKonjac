@@ -88,6 +88,9 @@
           <select id="outputDevice">
             <option value="">System default</option>
           </select>
+          <button id="testOutboundButton" type="button" class="secondary mini-button">
+            Test outbound (partner should hear 440 Hz)
+          </button>
           <p class="field-hint">
             One-way output, or two-way outbound English. Pick BlackHole 2ch for LINE/FaceTime mic.
           </p>
@@ -107,10 +110,13 @@
             <option value="">System default</option>
           </select>
           <button id="testChineseOutputButton" type="button" class="secondary mini-button">
-            Test Chinese output
+            Test Chinese output (you should hear 880 Hz)
+          </button>
+          <button id="auditLeakButton" type="button" class="secondary mini-button">
+            Audit inbound→BlackHole 2ch leak
           </button>
           <p class="field-hint">
-            Strict isolation: set LINE speaker/output to BlackHole 16ch, then select that same device here as inbound input. For "Their voice → Chinese output", explicitly pick your real headphones or speakers — do not leave it on "System default" and do not pick any BlackHole device, otherwise translated Chinese can route back into the call.
+            Strict isolation: set LINE speaker/output to BlackHole 16ch, then select that same device here as inbound input. For "Their voice → Chinese output", explicitly pick your real headphones or speakers — do not leave it on "System default" and do not pick any BlackHole device, otherwise translated Chinese can route back into the call. The Audit button captures BlackHole 2ch while playing a 660 Hz tone through the inbound output and reports any leak — useful when a macOS Multi-Output / Aggregate Device silently routes the inbound sink into BlackHole 2ch.
           </p>
         </div>
 
