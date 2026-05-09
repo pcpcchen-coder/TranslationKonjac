@@ -5,6 +5,11 @@ import {
   buildMicrophoneMediaOptions,
   buildRawAudioInputMediaOptions,
 } from "/capture-options.js";
+import {
+  pickPreferredOutboundDevice,
+  pickSafeInboundOutputDevice,
+  validateTwoWayOutputRouting,
+} from "/output-routing.js";
 
 const TRANSLATION_CALL_URL =
   "https://api.openai.com/v1/realtime/translations/calls";
@@ -140,6 +145,14 @@ startTwoWayButton.addEventListener("click", async () => {
   try {
     await refreshOutputDevices({ preferBlackHole: true });
     assertTwoWayIsolation();
+
+    const routingCheck = validateTwoWayOutputRouting({
+      outboundDevice: readSelectedOption(outputDevice),
+      inboundDevice: readSelectedOption(inboundOutputDevice),
+    });
+    if (!routingCheck.ok) {
+      throw new Error(routingCheck.error);
+    }
 
     setStatus("Allow microphone access for your Chinese speech", "idle");
     const micStream = await captureMicrophoneAudio("outbound");
@@ -583,9 +596,36 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
   fillOutputSelect(inboundOutputDevice, outputs);
   fillInputSelect(inboundInputDevice, inputs);
 
-  restoreOutputSelection(outputDevice, previousOutput, { preferBlackHole });
-  restoreOutputSelection(inboundOutputDevice, previousInbound, { preferBlackHole: false });
+  if (preferBlackHole) {
+    outputDevice.value = pickPreferredOutboundDevice({
+      options: readSelectOptions(outputDevice),
+      previousValue: previousOutput,
+    });
+    inboundOutputDevice.value = pickSafeInboundOutputDevice({
+      options: readSelectOptions(inboundOutputDevice),
+      outboundDeviceId: outputDevice.value,
+      previousValue: previousInbound,
+    });
+  } else {
+    restoreOutputSelection(outputDevice, previousOutput, { preferBlackHole: false });
+    restoreOutputSelection(inboundOutputDevice, previousInbound, { preferBlackHole: false });
+  }
   restoreInputSelection(inboundInputDevice, previousInboundInput, { preferBlackHole16: true });
+}
+
+function readSelectOptions(select) {
+  return [...select.options].map((option) => ({
+    value: option.value,
+    label: option.textContent ?? "",
+  }));
+}
+
+function readSelectedOption(select) {
+  const option = select.selectedOptions?.[0];
+  return {
+    value: select.value,
+    label: option?.textContent ?? "",
+  };
 }
 
 function fillOutputSelect(select, outputs) {
