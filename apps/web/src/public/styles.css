@@ -42,7 +42,7 @@ select {
 }
 
 .shell {
-  width: min(1000px, calc(100vw - 40px));
+  width: min(1280px, calc(100vw - 40px));
   margin: 0 auto;
   padding: 22px 0 44px;
 }
@@ -171,7 +171,7 @@ article {
 
 .control-dock {
   display: grid;
-  grid-template-columns: minmax(150px, 0.7fr) minmax(245px, 1fr) minmax(230px, 0.9fr) minmax(260px, 1fr) minmax(220px, 0.8fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 12px;
   align-items: stretch;
   width: 100%;
@@ -499,4 +499,17 @@ ol {
   .meters {
     grid-template-columns: 1fr;
   }
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.transcript-label {
+  margin: 10px 0 4px;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }

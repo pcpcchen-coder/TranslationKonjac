@@ -28,6 +28,24 @@
       </section>
 
       <section class="control-dock" aria-label="Translation controls">
+        <fieldset class="dock-section source-picker">
+          <legend>Mode</legend>
+          <label class="source-option">
+            <input type="radio" name="translationMode" value="one-way" checked />
+            <span>
+              <strong>One-way</strong>
+              <small>Translate one selected audio source.</small>
+            </span>
+          </label>
+          <label class="source-option">
+            <input type="radio" name="translationMode" value="two-way" />
+            <span>
+              <strong>Two-way call</strong>
+              <small>Your mic → English to BlackHole; call tab → Chinese to you.</small>
+            </span>
+          </label>
+        </fieldset>
+
         <div class="dock-section field">
           <label for="targetLanguage">Target language</label>
           <select id="targetLanguage">
@@ -71,7 +89,17 @@
             <option value="">System default</option>
           </select>
           <p class="field-hint">
-            Pick BlackHole 2ch here, then choose BlackHole as the LINE/FaceTime microphone.
+            One-way output, or two-way outbound English. Pick BlackHole 2ch for LINE/FaceTime mic.
+          </p>
+        </div>
+
+        <div class="dock-section field" id="twoWayPanel" hidden>
+          <label for="inboundOutputDevice">Their voice → Chinese output</label>
+          <select id="inboundOutputDevice">
+            <option value="">System default</option>
+          </select>
+          <p class="field-hint">
+            Leave as default for your headphones/speakers. Do not route this to BlackHole.
           </p>
         </div>
 
@@ -98,8 +126,11 @@
           <button id="startButton" type="button">
             Choose tab to start translating
           </button>
+          <button id="startTwoWayButton" type="button" hidden>
+            Start two-way call mode
+          </button>
           <button id="stopButton" type="button" class="secondary" disabled>
-            Stop
+            Stop all
           </button>
         </div>
       </section>
@@ -121,7 +152,8 @@
           <ol>
             <li>For Chrome tab mode: open a tab playing audio, then share that tab with tab audio enabled.</li>
             <li>For microphone mode: choose Microphone, allow mic access, then play phone/app audio near the computer mic.</li>
-            <li>Pick the target language, start translating, and listen for translated speech.</li>
+            <li>For two-way call mode: choose your call tab for their English audio; your mic is always translated to English.</li>
+            <li>Pick the target language for one-way mode, start translating, and listen for translated speech.</li>
           </ol>
           <dl class="diagnostics">
             <div>

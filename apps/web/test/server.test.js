@@ -28,6 +28,9 @@ test("serves the browser app from the root route", async () => {
     assert.match(body, /In-browser Realtime Translation/);
     assert.match(body, /Choose tab to start translating/);
     assert.match(body, /Microphone/);
+    assert.match(body, /Two-way call/);
+    assert.match(body, /Start two-way call mode/);
+    assert.match(body, /Their voice → Chinese output/);
     assert.match(body, /Translated audio output/);
     assert.match(body, /option value="en" selected/);
     assert.doesNotMatch(body, /Start translating</);
@@ -60,6 +63,9 @@ test("serves browser app code that connects to translation over WebRTC", async (
     assert.match(body, /RTCPeerConnection/);
     assert.match(body, /getUserMedia/);
     assert.match(body, /setSinkId/);
+    assert.match(body, /startTwoWayButton/);
+    assert.match(body, /outbound mic→en/);
+    assert.match(body, /inbound tab→zh/);
     assert.match(body, /realtime\/translations\/calls/);
     assert.doesNotMatch(body, /new WebSocket/);
   });
