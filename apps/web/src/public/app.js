@@ -140,15 +140,9 @@ startTwoWayButton.addEventListener("click", async () => {
   clearTranscript();
   resetDiagnostics();
   setControls({ running: true });
-  setStatus("Allow microphone access for your Chinese speech", "idle");
+  setStatus("Preparing two-way call mode", "idle");
 
   try {
-    const micStream = await captureMicrophoneAudio("outbound");
-    runtime.streams.push(micStream);
-    runtime.outboundInputTracks = micStream.getAudioTracks();
-    startInputMeter(micStream, "outbound", inputMeter);
-
-    setStatus("Resolving safe output devices", "idle");
     await refreshOutputDevices({ preferBlackHole: true });
     assertTwoWayIsolation();
 
@@ -159,6 +153,12 @@ startTwoWayButton.addEventListener("click", async () => {
     if (!routingCheck.ok) {
       throw new Error(routingCheck.error);
     }
+
+    setStatus("Allow microphone access for your Chinese speech", "idle");
+    const micStream = await captureMicrophoneAudio("outbound");
+    runtime.streams.push(micStream);
+    runtime.outboundInputTracks = micStream.getAudioTracks();
+    startInputMeter(micStream, "outbound", inputMeter);
 
     const inboundSource = selectedInboundSourceType();
     setStatus(
@@ -179,7 +179,7 @@ startTwoWayButton.addEventListener("click", async () => {
       stream: micStream,
       outputSelect: outputDevice,
       transcriptPrefix: "To them: ",
-      outputPolicy: { required: true, strict: true, forbidBlackHole: false, requireBlackHole2ch: true },
+      outputPolicy: { required: true, forbidBlackHole: false, requireBlackHole2ch: true },
     });
     runtime.outboundSenders = runtime.outbound.audioSenders;
     await setOutboundInputEnabled(true, "ready");
@@ -192,7 +192,7 @@ startTwoWayButton.addEventListener("click", async () => {
       stream: inboundStream,
       outputSelect: inboundOutputDevice,
       transcriptPrefix: "To you: ",
-      outputPolicy: { required: true, strict: true, forbidBlackHole: true, requireBlackHole2ch: false },
+      outputPolicy: { required: true, forbidBlackHole: true, requireBlackHole2ch: false },
     });
 
     setStatus("Two-way call translation live", "live");
@@ -704,32 +704,12 @@ async function applyOutputDevice(audio, select, context, policy = {}) {
   }
 
   if (typeof audio.setSinkId !== "function") {
-    const message = "This browser cannot choose output devices. Use Chrome/Edge or macOS sound routing.";
-    logEvent("audio.output", message);
-    if (policy.required || policy.strict) {
-      throw new Error(`${context}: ${message}`);
-    }
-    return false;
+    throw new Error("This browser cannot choose output devices. Use Chrome/Edge or macOS sound routing.");
   }
 
-  try {
-    await audio.setSinkId(select.value);
-    const sinkSuffix = audio.sinkId ? ` sinkId=${audio.sinkId}` : "";
-    logEvent("audio.output", `${context}: ${label}${sinkSuffix}`);
-    if (policy.strict && audio.sinkId && audio.sinkId !== select.value) {
-      throw new Error(
-        `${context}: requested sinkId ${select.value} but browser bound ${audio.sinkId}. Grant device permissions and retry.`,
-      );
-    }
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logEvent("audio.output.error", `${context}: ${message}`);
-    if (policy.required || policy.strict) {
-      throw new Error(`${context}: failed to apply output device — ${message}`);
-    }
-    return false;
-  }
+  await audio.setSinkId(select.value);
+  logEvent("audio.output", `${context}: ${label}`);
+  return true;
 }
 
 function startInputMeter(stream, label, meterElement = inputMeter) {
