@@ -117,23 +117,27 @@ This means:
 
 1. Open `http://127.0.0.1:5173` in Chrome or Edge.
 2. Mode: `Two-way call`.
-3. `Translated audio output`: choose `BlackHole 2ch`.
+3. `Your microphone input`: choose your real microphone/headset, such as `OpenRun Pro 2`.
+   - Do **not** choose System default.
+   - Do **not** choose any BlackHole device here.
+4. `Translated audio output`: choose `BlackHole 2ch`.
    - This is the outbound Chinese → English path to LINE.
-4. `Their voice source`: choose `Audio input device, e.g. BlackHole 16ch from LINE app`.
-5. In the input device dropdown, choose `BlackHole 16ch`.
+5. `Their voice source`: choose `Audio input device, e.g. BlackHole 16ch from LINE app`.
+6. In the input device dropdown, choose `BlackHole 16ch`.
    - This is the inbound English → Chinese path from LINE.
-6. `Their voice → Chinese output`: choose an explicit real headphones/speakers device, such as `OpenRun Pro 2`.
+7. `Their voice → Chinese output`: choose an explicit real headphones/speakers device, such as `OpenRun Pro 2`.
    - Do **not** choose `System default`.
    - Do **not** choose `BlackHole 2ch` or `BlackHole 16ch` here.
    - Strict isolation mode blocks startup if this output is empty/default or any BlackHole device.
-7. Click `Start two-way call mode`.
-8. Allow microphone permission if prompted.
-9. Safe mode is push-to-talk: keep your hands off `Hold to talk to them` while listening. Hold it only while you speak Chinese, then release immediately.
+8. Click `Start two-way call mode`.
+9. Allow microphone permission if prompted.
+10. Safe mode is push-to-talk: keep your hands off `Hold to talk to them` while listening. Hold it only while you speak Chinese, then release immediately.
 
 ### Operating checklist before a LINE call
 
 - LINE microphone/input = `BlackHole 2ch`
 - LINE speaker/output = `BlackHole 16ch`
+- Web app your microphone input = real microphone/headset, e.g. `OpenRun Pro 2`
 - Web app outbound translated output = `BlackHole 2ch`
 - Web app inbound source = `BlackHole 16ch`
 - Web app Chinese output = explicit real headphones/speakers, not System default and not BlackHole
