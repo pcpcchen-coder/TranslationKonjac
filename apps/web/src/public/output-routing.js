@@ -8,7 +8,7 @@ export function isBlackHoleLabel(label) {
 
 export function pickPreferredOutboundDevice({ options, previousValue = "" }) {
   const previous = options.find((option) => option.value === previousValue);
-  if (previous?.value) {
+  if (previous?.value && BLACKHOLE_2CH_LABEL_PATTERN.test(previous.label ?? "")) {
     return previous.value;
   }
 
