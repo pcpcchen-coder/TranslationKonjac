@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildAudioInputMediaOptions,
   buildDisplayMediaOptions,
   buildMicrophoneMediaOptions,
 } from "../src/public/capture-options.js";
@@ -27,4 +28,13 @@ test("buildMicrophoneMediaOptions requests microphone audio only", () => {
   assert.equal(options.audio.echoCancellation, true);
   assert.equal(options.audio.noiseSuppression, true);
   assert.equal(options.audio.autoGainControl, true);
+});
+
+
+test("buildAudioInputMediaOptions can target a selected input device", () => {
+  const options = buildAudioInputMediaOptions("device-123");
+
+  assert.equal(options.video, false);
+  assert.deepEqual(options.audio.deviceId, { exact: "device-123" });
+  assert.equal(options.audio.echoCancellation, true);
 });

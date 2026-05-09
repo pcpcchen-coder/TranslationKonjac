@@ -41,7 +41,7 @@
             <input type="radio" name="translationMode" value="two-way" />
             <span>
               <strong>Two-way call</strong>
-              <small>Your mic → English to BlackHole; call tab → Chinese to you.</small>
+              <small>Your mic → English to BlackHole; tab or LINE app audio → Chinese to you.</small>
             </span>
           </label>
         </fieldset>
@@ -94,12 +94,20 @@
         </div>
 
         <div class="dock-section field" id="twoWayPanel" hidden>
+          <label for="inboundSourceType">Their voice source</label>
+          <select id="inboundSourceType">
+            <option value="tab">Chrome tab audio</option>
+            <option value="device">Audio input device, e.g. BlackHole 16ch from LINE app</option>
+          </select>
+          <select id="inboundInputDevice">
+            <option value="">Default audio input</option>
+          </select>
           <label for="inboundOutputDevice">Their voice → Chinese output</label>
           <select id="inboundOutputDevice">
             <option value="">System default</option>
           </select>
           <p class="field-hint">
-            Leave as default for your headphones/speakers. Do not route this to BlackHole.
+            For LINE app: set LINE speaker/output to a separate virtual device like BlackHole 16ch, then select that same device here as the inbound input. Leave Chinese output on headphones/speakers, not BlackHole.
           </p>
         </div>
 
@@ -152,7 +160,8 @@
           <ol>
             <li>For Chrome tab mode: open a tab playing audio, then share that tab with tab audio enabled.</li>
             <li>For microphone mode: choose Microphone, allow mic access, then play phone/app audio near the computer mic.</li>
-            <li>For two-way call mode: choose your call tab for their English audio; your mic is always translated to English.</li>
+            <li>For two-way call mode with LINE Web: choose the call tab for their English audio.</li>
+            <li>For two-way call mode with LINE app: set LINE speaker/output to BlackHole 16ch, then choose that device as “Their voice source”.</li>
             <li>Pick the target language for one-way mode, start translating, and listen for translated speech.</li>
           </ol>
           <dl class="diagnostics">

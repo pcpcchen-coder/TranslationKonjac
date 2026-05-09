@@ -1,5 +1,6 @@
 import { buildAudioMixState } from "/audio-mix.js";
 import {
+  buildAudioInputMediaOptions,
   buildDisplayMediaOptions,
   buildMicrophoneMediaOptions,
 } from "/capture-options.js";
@@ -14,6 +15,8 @@ const modeInputs = [...document.querySelectorAll("input[name='translationMode']"
 const targetLanguage = document.querySelector("#targetLanguage");
 const audioSourceInputs = [...document.querySelectorAll("input[name='audioSource']")];
 const outputDevice = document.querySelector("#outputDevice");
+const inboundSourceType = document.querySelector("#inboundSourceType");
+const inboundInputDevice = document.querySelector("#inboundInputDevice");
 const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
 const twoWayPanel = document.querySelector("#twoWayPanel");
 const startButton = document.querySelector("#startButton");
@@ -74,6 +77,8 @@ inboundOutputDevice.addEventListener("change", () => {
   void applyOutputDevice(runtime.inbound?.translatedAudio, inboundOutputDevice, "inbound output");
 });
 
+inboundSourceType.addEventListener("change", updateModeUi);
+
 navigator.mediaDevices?.addEventListener?.("devicechange", () => {
   void refreshOutputDevices();
 });
@@ -125,9 +130,15 @@ startTwoWayButton.addEventListener("click", async () => {
     runtime.streams.push(micStream);
     startInputMeter(micStream, "outbound");
 
-    setStatus("Pick the call tab that contains their English audio", "idle");
-    const tabStream = await captureTabAudio("inbound");
-    runtime.streams.push(tabStream);
+    const inboundSource = selectedInboundSourceType();
+    setStatus(
+      inboundSource === "device"
+        ? "Capturing LINE app audio from selected input device"
+        : "Pick the call tab that contains their English audio",
+      "idle",
+    );
+    const inboundStream = await captureInboundAudio("inbound");
+    runtime.streams.push(inboundStream);
 
     setStatus("Creating outbound Chinese → English session", "idle");
     const outboundSession = await createSession("en");
@@ -142,15 +153,15 @@ startTwoWayButton.addEventListener("click", async () => {
     setStatus("Creating inbound English → Chinese session", "idle");
     const inboundSession = await createSession("zh");
     runtime.inbound = await connectRealtimeTranslation({
-      name: "inbound tab→zh",
+      name: selectedInboundSourceType() === "device" ? "inbound device→zh" : "inbound tab→zh",
       session: inboundSession,
-      stream: tabStream,
+      stream: inboundStream,
       outputSelect: inboundOutputDevice,
       transcriptPrefix: "To you: ",
     });
 
     setStatus("Two-way call translation live", "live");
-    captureState.textContent = "outbound=mic→en, inbound=tab→zh";
+    captureState.textContent = `outbound=mic→en, inbound=${selectedInboundSourceType()}→zh`;
   } catch (error) {
     logEvent("error", error instanceof Error ? error.message : String(error));
     await stopAll("Stopped after two-way startup error", "error");
@@ -169,6 +180,10 @@ function selectedAudioSource() {
   return audioSourceInputs.find((input) => input.checked)?.value ?? "tab";
 }
 
+function selectedInboundSourceType() {
+  return inboundSourceType?.value ?? "tab";
+}
+
 function updateModeUi() {
   const mode = selectedMode();
   const twoWay = mode === "two-way";
@@ -176,6 +191,7 @@ function updateModeUi() {
   const isMic = sourceType === "microphone";
 
   twoWayPanel.hidden = !twoWay;
+  inboundInputDevice.hidden = !twoWay || selectedInboundSourceType() !== "device";
   startButton.hidden = twoWay;
   startTwoWayButton.hidden = !twoWay;
   targetLanguage.disabled = twoWay;
@@ -368,6 +384,44 @@ async function captureMicrophoneAudio(label = "microphone") {
   return stream;
 }
 
+
+async function captureAudioInputDevice(label = "audio-input", deviceId = "") {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("This browser does not support audio input capture.");
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia(
+    buildAudioInputMediaOptions(deviceId),
+  );
+
+  const audioTracks = stream.getAudioTracks();
+  if (audioTracks.length === 0) {
+    stream.getTracks().forEach((track) => track.stop());
+    throw new Error("No audio was captured from the selected input device.");
+  }
+
+  audioTracks[0].addEventListener(
+    "ended",
+    () => {
+      void stopAll(`${label} input sharing ended`, "idle");
+    },
+    { once: true },
+  );
+
+  const selectedLabel = inboundInputDevice.selectedOptions[0]?.textContent ?? "selected input";
+  captureState.textContent = `${label}: device=${selectedLabel}`;
+  logEvent(`${label}.capture.started`, `input device=${selectedLabel}`);
+
+  return stream;
+}
+
+function captureInboundAudio(label = "inbound") {
+  if (selectedInboundSourceType() === "device") {
+    return captureAudioInputDevice(label, inboundInputDevice.value);
+  }
+  return captureTabAudio(label);
+}
+
 function captureAudioSource(sourceType, label) {
   return sourceType === "microphone" ? captureMicrophoneAudio(label) : captureTabAudio(label);
 }
@@ -379,6 +433,7 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
 
   const previousOutput = outputDevice.value;
   const previousInbound = inboundOutputDevice.value;
+  const previousInboundInput = inboundInputDevice.value;
   let devices = [];
   try {
     devices = await navigator.mediaDevices.enumerateDevices();
@@ -388,11 +443,14 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
   }
 
   const outputs = devices.filter((device) => device.kind === "audiooutput");
+  const inputs = devices.filter((device) => device.kind === "audioinput");
   fillOutputSelect(outputDevice, outputs);
   fillOutputSelect(inboundOutputDevice, outputs);
+  fillInputSelect(inboundInputDevice, inputs);
 
   restoreOutputSelection(outputDevice, previousOutput, { preferBlackHole });
   restoreOutputSelection(inboundOutputDevice, previousInbound, { preferBlackHole: false });
+  restoreInputSelection(inboundInputDevice, previousInboundInput, { preferBlackHole16: true });
 }
 
 function fillOutputSelect(select, outputs) {
@@ -402,6 +460,17 @@ function fillOutputSelect(select, outputs) {
       continue;
     }
     const label = device.label || `Audio output ${index + 1}`;
+    select.add(new Option(label, device.deviceId));
+  }
+}
+
+function fillInputSelect(select, inputs) {
+  select.replaceChildren(new Option("Default audio input", ""));
+  for (const [index, device] of inputs.entries()) {
+    if (!device.deviceId || device.deviceId === "default") {
+      continue;
+    }
+    const label = device.label || `Audio input ${index + 1}`;
     select.add(new Option(label, device.deviceId));
   }
 }
@@ -418,6 +487,22 @@ function restoreOutputSelection(select, previousValue, { preferBlackHole }) {
     );
     if (blackHoleOption) {
       select.value = blackHoleOption.value;
+    }
+  }
+}
+
+function restoreInputSelection(select, previousValue, { preferBlackHole16 }) {
+  const values = new Set([...select.options].map((option) => option.value));
+  if (previousValue && values.has(previousValue)) {
+    select.value = previousValue;
+    return;
+  }
+  if (preferBlackHole16) {
+    const blackHole16Option = [...select.options].find((option) =>
+      /blackhole\s*16ch/i.test(option.textContent ?? ""),
+    );
+    if (blackHole16Option) {
+      select.value = blackHole16Option.value;
     }
   }
 }
@@ -588,6 +673,8 @@ function setControls({ running }) {
   startTwoWayButton.disabled = running;
   stopButton.disabled = !running;
   outputDevice.disabled = running;
+  inboundSourceType.disabled = running;
+  inboundInputDevice.disabled = running;
   inboundOutputDevice.disabled = running;
 
   if (!running) {

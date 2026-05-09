@@ -22,12 +22,22 @@ export function buildDisplayMediaOptions(supportedConstraints = {}) {
 }
 
 export function buildMicrophoneMediaOptions() {
+  return buildAudioInputMediaOptions();
+}
+
+export function buildAudioInputMediaOptions(deviceId = "") {
+  const audio = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+
+  if (deviceId) {
+    audio.deviceId = { exact: deviceId };
+  }
+
   return {
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
+    audio,
     video: false,
   };
 }
