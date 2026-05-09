@@ -96,6 +96,10 @@ test("serves browser app code that connects to translation over WebRTC", async (
     assert.match(body, /monitor\.bh2ch/);
     assert.match(body, /default\.output/);
     assert.match(body, /Chrome bound/);
+    assert.match(body, /createMediaStreamSource/);
+    assert.match(body, /createMediaStreamDestination/);
+    assert.match(body, /Web Audio routing/);
+    assert.match(body, /closeRemoteAudioContext/);
     assert.match(body, /audio.blocked/);
     assert.match(body, /BlackHole output is blocked/);
     assert.match(body, /guardOutboundMicDuringInboundPlayback/);

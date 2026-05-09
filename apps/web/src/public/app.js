@@ -785,6 +785,8 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
   await applyOutputDevice(translatedAudio, outputSelect, `${name} output`, outputPolicy);
   applyAudioMix();
 
+  let remoteAudioContext = null;
+
   peerConnection.onconnectionstatechange = () => {
     diagnostics.connectionState = `${name}: ${peerConnection.connectionState}`;
     logEvent(`${name}.webrtc.connection`, peerConnection.connectionState);
@@ -806,14 +808,35 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
 
   peerConnection.ontrack = ({ streams }) => {
     diagnostics.remoteAudioTracks += 1;
-    translatedAudio.srcObject = streams[0];
     void (async () => {
       try {
+        // Workaround for Chrome's WebRTC implicit playout: when an <audio>
+        // element points srcObject at a WebRTC remote MediaStream and uses
+        // setSinkId, some Chrome builds still leak the audio out a second
+        // sink (often ending up at BlackHole 2ch on a Mac wired into LINE).
+        // Routing the remote stream through createMediaStreamSource →
+        // createMediaStreamDestination produces a synthetic, non-WebRTC
+        // MediaStream where setSinkId binds reliably and there is no
+        // implicit playout.
+        const ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(streams[0]);
+        const destination = ctx.createMediaStreamDestination();
+        source.connect(destination);
+        if (remoteAudioContext && remoteAudioContext.state !== "closed") {
+          try {
+            await remoteAudioContext.close();
+          } catch {
+            // ignore
+          }
+        }
+        remoteAudioContext = ctx;
+
+        translatedAudio.srcObject = destination.stream;
         await applyOutputDevice(translatedAudio, outputSelect, `${name} output`, outputPolicy);
         applyAudioMix();
         translatedAudio.muted = false;
         await translatedAudio.play();
-        logEvent(`${name}.remote.audio`, "track received");
+        logEvent(`${name}.remote.audio`, "track received via Web Audio routing");
       } catch (error) {
         translatedAudio.muted = true;
         translatedAudio.pause();
@@ -866,7 +889,23 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
   });
 
   logEvent(`${name}.webrtc.offer`, `connected for ${session.targetLanguage}`);
-  return { name, peerConnection, dataChannel, translatedAudio, audioSenders };
+  return {
+    name,
+    peerConnection,
+    dataChannel,
+    translatedAudio,
+    audioSenders,
+    closeRemoteAudioContext: async () => {
+      if (remoteAudioContext && remoteAudioContext.state !== "closed") {
+        try {
+          await remoteAudioContext.close();
+        } catch {
+          // ignore
+        }
+      }
+      remoteAudioContext = null;
+    },
+  };
 }
 
 async function captureTabAudio(label = "tab") {
@@ -1316,6 +1355,7 @@ async function stopAll(message, state = "idle") {
       session.translatedAudio.pause();
       session.translatedAudio.srcObject = null;
     }
+    await session?.closeRemoteAudioContext?.();
   }
   runtime.oneWay = null;
   runtime.outbound = null;
