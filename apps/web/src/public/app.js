@@ -819,6 +819,23 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
         // MediaStream where setSinkId binds reliably and there is no
         // implicit playout.
         const ctx = new AudioContext();
+        // ontrack fires asynchronously after WebRTC negotiation, outside
+        // the original click's user-gesture window, so the AudioContext
+        // starts suspended and would silently produce a dead graph.
+        if (ctx.state === "suspended") {
+          try {
+            await ctx.resume();
+          } catch (resumeError) {
+            logEvent(
+              `${name}.audio.context.resume`,
+              resumeError instanceof Error ? resumeError.message : String(resumeError),
+            );
+          }
+        }
+        logEvent(
+          `${name}.audio.context`,
+          `state=${ctx.state} sampleRate=${ctx.sampleRate}`,
+        );
         const source = ctx.createMediaStreamSource(streams[0]);
         const destination = ctx.createMediaStreamDestination();
         source.connect(destination);
