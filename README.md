@@ -6,10 +6,10 @@ Realtime speech translation project.
 
 The current implementation lives in `apps/web` and provides a browser-based OpenAI Realtime Translation service:
 
-- Chrome tab audio → translated speech
-- Microphone audio → translated speech
-- Target language defaults to English
-- Translated audio output device selection, useful for routing to BlackHole 2ch and then into LINE / FaceTime as a virtual microphone
+- One-way translation from Chrome tab audio or microphone audio
+- Two-way call translation mode
+- Output device selection for routing translated speech into virtual audio devices
+- macOS LINE app routing with BlackHole 2ch + BlackHole 16ch
 
 ## Planned structure
 
@@ -38,6 +38,11 @@ Open:
 http://127.0.0.1:5173
 ```
 
-## macOS audio routing note
+## macOS audio routing overview
 
-For sending translated speech into LINE or FaceTime, install BlackHole 2ch, select `BlackHole 2ch` as the web app's translated audio output, then select `BlackHole 2ch` as the microphone/input device in the calling app.
+For call translation, the web app translates audio, but LINE / FaceTime need to receive translated speech as if it were a microphone. On macOS, use virtual audio devices:
+
+- `BlackHole 2ch`: outbound translated English sent into LINE/FaceTime as microphone input
+- `BlackHole 16ch`: inbound LINE app speaker audio sent into the web app for English → Chinese translation
+
+Detailed operating instructions are in [`apps/web/README.md`](apps/web/README.md).
