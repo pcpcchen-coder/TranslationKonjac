@@ -116,6 +116,7 @@ startButton.addEventListener("click", async () => {
       stream,
       outputSelect: outputDevice,
       transcriptPrefix: "",
+      outputPolicy: { required: false, forbidBlackHole: false, requireBlackHole2ch: false },
     });
 
     setStatus(sourceType === "microphone" ? "Translating microphone audio" : "Translating tab audio", "live");
@@ -159,6 +160,7 @@ startTwoWayButton.addEventListener("click", async () => {
       stream: micStream,
       outputSelect: outputDevice,
       transcriptPrefix: "To them: ",
+      outputPolicy: { required: true, forbidBlackHole: false, requireBlackHole2ch: true },
     });
 
     setStatus("Creating inbound English → Chinese session", "idle");
@@ -169,6 +171,7 @@ startTwoWayButton.addEventListener("click", async () => {
       stream: inboundStream,
       outputSelect: inboundOutputDevice,
       transcriptPrefix: "To you: ",
+      outputPolicy: { required: true, forbidBlackHole: true, requireBlackHole2ch: false },
     });
 
     setStatus("Two-way call translation live", "live");
@@ -229,6 +232,7 @@ function createTranslatedAudioSink(name) {
   const audio = new Audio();
   audio.autoplay = true;
   audio.playsInline = true;
+  audio.muted = true;
   audio.dataset.translationSink = name;
   return audio;
 }
@@ -277,7 +281,8 @@ async function playOutputTestTone(select, context) {
     const audio = createTranslatedAudioSink(`${context} tone`);
     audio.volume = 0.5;
     audio.src = createToneWavDataUrl({ frequency: 880, durationSeconds: 0.8 });
-    await applyOutputDevice(audio, select, context);
+    await applyOutputDevice(audio, select, context, { required: true, forbidBlackHole: true });
+    audio.muted = false;
     await audio.play();
     logEvent("audio.output.test", `${context}: ${selectedOptionLabel(select)}`);
   } catch (error) {
@@ -343,11 +348,11 @@ async function createSession(language) {
   return body;
 }
 
-async function connectRealtimeTranslation({ name, session, stream, outputSelect, transcriptPrefix }) {
+async function connectRealtimeTranslation({ name, session, stream, outputSelect, transcriptPrefix, outputPolicy = {} }) {
   const peerConnection = new RTCPeerConnection();
   const dataChannel = peerConnection.createDataChannel("oai-events");
   const translatedAudio = createTranslatedAudioSink(name);
-  await applyOutputDevice(translatedAudio, outputSelect, `${name} output`);
+  await applyOutputDevice(translatedAudio, outputSelect, `${name} output`, outputPolicy);
   applyAudioMix();
 
   peerConnection.onconnectionstatechange = () => {
@@ -372,13 +377,20 @@ async function connectRealtimeTranslation({ name, session, stream, outputSelect,
   peerConnection.ontrack = ({ streams }) => {
     diagnostics.remoteAudioTracks += 1;
     translatedAudio.srcObject = streams[0];
-    void applyOutputDevice(translatedAudio, outputSelect, `${name} output`);
-    applyAudioMix();
-    void translatedAudio.play().catch((error) => {
-      logEvent(`${name}.audio.play`, error.message);
-    });
-    logEvent(`${name}.remote.audio`, "track received");
-    updateDiagnostics();
+    void (async () => {
+      try {
+        await applyOutputDevice(translatedAudio, outputSelect, `${name} output`, outputPolicy);
+        applyAudioMix();
+        translatedAudio.muted = false;
+        await translatedAudio.play();
+        logEvent(`${name}.remote.audio`, "track received");
+      } catch (error) {
+        translatedAudio.muted = true;
+        translatedAudio.pause();
+        logEvent(`${name}.audio.blocked`, error instanceof Error ? error.message : String(error));
+      }
+      updateDiagnostics();
+    })();
   };
 
   dataChannel.onopen = () => {
@@ -621,23 +633,34 @@ function restoreInputSelection(select, previousValue, { preferBlackHole16 }) {
   }
 }
 
-async function applyOutputDevice(audio, select, context) {
-  if (!audio || !select?.value) {
-    return;
+async function applyOutputDevice(audio, select, context, policy = {}) {
+  if (!audio) {
+    return false;
+  }
+
+  const label = selectedOptionLabel(select);
+  if (policy.required && !select?.value) {
+    throw new Error(`${context}: explicit output device is required; System default is blocked.`);
+  }
+  if (policy.forbidBlackHole && isBlackHoleLabel(label)) {
+    throw new Error(`${context}: BlackHole output is blocked for inbound Chinese playback.`);
+  }
+  if (policy.requireBlackHole2ch && !/blackhole\s*2ch/i.test(label)) {
+    throw new Error(`${context}: BlackHole 2ch is required for outbound audio to LINE microphone.`);
+  }
+
+  if (!select?.value) {
+    audio.muted = false;
+    return true;
   }
 
   if (typeof audio.setSinkId !== "function") {
-    logEvent("audio.output", "This browser cannot choose output devices. Use Chrome/Edge or macOS sound routing.");
-    return;
+    throw new Error("This browser cannot choose output devices. Use Chrome/Edge or macOS sound routing.");
   }
 
-  try {
-    await audio.setSinkId(select.value);
-    const label = select.selectedOptions[0]?.textContent ?? "selected output";
-    logEvent("audio.output", `${context}: ${label}`);
-  } catch (error) {
-    logEvent("audio.output.error", error instanceof Error ? error.message : String(error));
-  }
+  await audio.setSinkId(select.value);
+  logEvent("audio.output", `${context}: ${label}`);
+  return true;
 }
 
 function startInputMeter(stream, label, meterElement = inputMeter) {
