@@ -20,6 +20,7 @@ const inboundSourceType = document.querySelector("#inboundSourceType");
 const inboundInputDevice = document.querySelector("#inboundInputDevice");
 const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
 const testChineseOutputButton = document.querySelector("#testChineseOutputButton");
+const pushToTalkButton = document.querySelector("#pushToTalkButton");
 const twoWayPanel = document.querySelector("#twoWayPanel");
 const startButton = document.querySelector("#startButton");
 const startTwoWayButton = document.querySelector("#startTwoWayButton");
@@ -58,6 +59,7 @@ const runtime = {
   outboundSenders: [],
   outboundReenableTimer: null,
   outboundOutputGuarded: false,
+  twoWayActive: false,
 };
 
 let diagnostics = createEmptyDiagnostics();
@@ -91,6 +93,33 @@ inboundSourceType.addEventListener("change", updateModeUi);
 
 testChineseOutputButton.addEventListener("click", () => {
   void playOutputTestTone(inboundOutputDevice, "Chinese output test");
+});
+
+pushToTalkButton.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  void setPushToTalk(true, "push-to-talk down");
+});
+pushToTalkButton.addEventListener("pointerup", (event) => {
+  event.preventDefault();
+  void setPushToTalk(false, "push-to-talk up");
+});
+pushToTalkButton.addEventListener("pointercancel", () => {
+  void setPushToTalk(false, "push-to-talk cancelled");
+});
+pushToTalkButton.addEventListener("lostpointercapture", () => {
+  void setPushToTalk(false, "push-to-talk lost capture");
+});
+pushToTalkButton.addEventListener("keydown", (event) => {
+  if (event.code === "Space" || event.code === "Enter") {
+    event.preventDefault();
+    void setPushToTalk(true, "push-to-talk keydown");
+  }
+});
+pushToTalkButton.addEventListener("keyup", (event) => {
+  if (event.code === "Space" || event.code === "Enter") {
+    event.preventDefault();
+    void setPushToTalk(false, "push-to-talk keyup");
+  }
 });
 
 navigator.mediaDevices?.addEventListener?.("devicechange", () => {
@@ -169,7 +198,8 @@ startTwoWayButton.addEventListener("click", async () => {
       outputPolicy: { required: true, forbidBlackHole: false, requireBlackHole2ch: true },
     });
     runtime.outboundSenders = runtime.outbound.audioSenders;
-    await setOutboundInputEnabled(true, "ready");
+    runtime.twoWayActive = true;
+    await setPushToTalk(false, "safe listen mode");
 
     setStatus("Creating inbound English → Chinese session", "idle");
     const inboundSession = await createSession("zh");
@@ -182,7 +212,8 @@ startTwoWayButton.addEventListener("click", async () => {
       outputPolicy: { required: true, forbidBlackHole: true, requireBlackHole2ch: false },
     });
 
-    setStatus("Two-way call translation live", "live");
+    pushToTalkButton.disabled = false;
+    setStatus("Two-way call translation live — hold to talk", "live");
     captureState.textContent = `outbound=mic→en, inbound=${selectedInboundSourceType()}→zh`;
   } catch (error) {
     logEvent("error", error instanceof Error ? error.message : String(error));
@@ -782,7 +813,7 @@ function handleRealtimeEvent(message, sessionName, transcriptPrefix) {
     guardOutboundMicDuringInboundPlayback(sessionName, event.type);
   }
   if (event.type === "output_audio_buffer.stopped") {
-    scheduleOutboundInputReenable(10000, `${sessionName}.${event.type}.quiet-window`);
+    logEvent("outbound.guard", `${sessionName}.${event.type}: staying detached until push-to-talk`);
   }
 
   updateDiagnostics();
@@ -795,7 +826,21 @@ function guardOutboundMicDuringInboundPlayback(sessionName, eventType) {
   }
   void setOutboundInputEnabled(false, `${sessionName}.${eventType}`);
   setOutboundOutputGuarded(true, `${sessionName}.${eventType}`);
-  scheduleOutboundInputReenable(10000, `${sessionName}.${eventType}.quiet-window`);
+  logEvent("outbound.guard", `${sessionName}.${eventType}: staying detached until push-to-talk`);
+}
+
+
+async function setPushToTalk(enabled, reason) {
+  if (!runtime.twoWayActive && enabled) {
+    return;
+  }
+  if (runtime.outboundReenableTimer) {
+    window.clearTimeout(runtime.outboundReenableTimer);
+    runtime.outboundReenableTimer = null;
+  }
+  await setOutboundInputEnabled(enabled, reason);
+  setOutboundOutputGuarded(!enabled, reason);
+  pushToTalkButton.textContent = enabled ? "Talking… release to listen" : "Hold to talk to them";
 }
 
 function scheduleOutboundInputReenable(delayMs, reason) {
@@ -867,6 +912,9 @@ async function stopAll(message, state = "idle") {
   runtime.outboundInputTracks = [];
   runtime.outboundSenders = [];
   runtime.outboundOutputGuarded = false;
+  runtime.twoWayActive = false;
+  pushToTalkButton.disabled = true;
+  pushToTalkButton.textContent = "Hold to talk to them";
   if (runtime.outboundReenableTimer) {
     window.clearTimeout(runtime.outboundReenableTimer);
     runtime.outboundReenableTimer = null;
@@ -902,6 +950,7 @@ function setControls({ running }) {
   inboundInputDevice.disabled = running;
   inboundOutputDevice.disabled = running;
   testChineseOutputButton.disabled = running;
+  pushToTalkButton.disabled = !runtime.twoWayActive || !running;
 
   if (!running) {
     updateModeUi();

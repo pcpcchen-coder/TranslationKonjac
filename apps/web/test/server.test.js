@@ -82,7 +82,8 @@ test("serves browser app code that connects to translation over WebRTC", async (
     assert.match(body, /outbound.mic/);
     assert.match(body, /replaceTrack/);
     assert.match(body, /outbound.output/);
-    assert.match(body, /quiet-window/);
+    assert.match(body, /push-to-talk/);
+    assert.match(body, /staying detached until push-to-talk/);
     assert.match(body, /realtime\/translations\/calls/);
     assert.doesNotMatch(body, /new WebSocket/);
   });
