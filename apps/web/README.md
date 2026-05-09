@@ -122,8 +122,10 @@ This means:
 4. `Their voice source`: choose `Audio input device, e.g. BlackHole 16ch from LINE app`.
 5. In the input device dropdown, choose `BlackHole 16ch`.
    - This is the inbound English → Chinese path from LINE.
-6. `Their voice → Chinese output`: choose your real headphones/speakers, or leave `System default` if that is your listening device.
+6. `Their voice → Chinese output`: choose an explicit real headphones/speakers device, such as `OpenRun Pro 2`.
+   - Do **not** choose `System default`.
    - Do **not** choose `BlackHole 2ch` or `BlackHole 16ch` here.
+   - Strict isolation mode blocks startup if this output is empty/default or any BlackHole device.
 7. Click `Start two-way call mode`.
 8. Allow microphone permission if prompted.
 
@@ -133,7 +135,7 @@ This means:
 - LINE speaker/output = `BlackHole 16ch`
 - Web app outbound translated output = `BlackHole 2ch`
 - Web app inbound source = `BlackHole 16ch`
-- Web app Chinese output = your headphones/speakers
+- Web app Chinese output = explicit real headphones/speakers, not System default and not BlackHole
 - Use headphones if possible to reduce echo and feedback
 
 ## Two-way call mode: LINE Web / browser calls
@@ -176,7 +178,7 @@ Check:
 - LINE speaker/output is `BlackHole 16ch`.
 - Web app `Their voice source` is `Audio input device`.
 - Web app inbound input device is `BlackHole 16ch`.
-- Web app `Their voice → Chinese output` is your real headphones/speakers, not BlackHole.
+- Web app `Their voice → Chinese output` is an explicit real headphones/speakers device, not System default and not BlackHole.
 
 ### Audio loops or echo
 

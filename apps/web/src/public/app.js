@@ -128,6 +128,7 @@ startTwoWayButton.addEventListener("click", async () => {
 
   try {
     await refreshOutputDevices({ preferBlackHole: true });
+    assertTwoWayIsolation();
 
     setStatus("Allow microphone access for your Chinese speech", "idle");
     const micStream = await captureMicrophoneAudio("outbound");
@@ -218,6 +219,46 @@ function updateModeUi() {
     : "Original tab audio played locally by this app.";
 }
 
+
+function createTranslatedAudioSink(name) {
+  const audio = new Audio();
+  audio.autoplay = true;
+  audio.playsInline = true;
+  audio.dataset.translationSink = name;
+  return audio;
+}
+
+function assertTwoWayIsolation() {
+  const outboundLabel = selectedOptionLabel(outputDevice);
+  const inboundOutputLabel = selectedOptionLabel(inboundOutputDevice);
+
+  if (!outputDevice.value || !/blackhole\s*2ch/i.test(outboundLabel)) {
+    throw new Error(
+      "Strict isolation blocked startup: Translated audio output must explicitly be BlackHole 2ch for LINE microphone.",
+    );
+  }
+
+  if (!inboundOutputDevice.value) {
+    throw new Error(
+      "Strict isolation blocked startup: choose an explicit real headphones/speakers device for Their voice → Chinese output; System default is not allowed.",
+    );
+  }
+
+  if (isBlackHoleLabel(inboundOutputLabel)) {
+    throw new Error(
+      "Strict isolation blocked startup: Their voice → Chinese output cannot be any BlackHole device. Choose OpenRun Pro 2, speakers, or headphones.",
+    );
+  }
+}
+
+function selectedOptionLabel(select) {
+  return select?.selectedOptions?.[0]?.textContent?.trim() ?? "";
+}
+
+function isBlackHoleLabel(label) {
+  return /blackhole/i.test(label);
+}
+
 async function createSession(language) {
   const response = await fetch("/session", {
     method: "POST",
@@ -236,9 +277,7 @@ async function createSession(language) {
 async function connectRealtimeTranslation({ name, session, stream, outputSelect, transcriptPrefix }) {
   const peerConnection = new RTCPeerConnection();
   const dataChannel = peerConnection.createDataChannel("oai-events");
-  const translatedAudio = new Audio();
-  translatedAudio.autoplay = true;
-  translatedAudio.playsInline = true;
+  const translatedAudio = createTranslatedAudioSink(name);
   await applyOutputDevice(translatedAudio, outputSelect, `${name} output`);
   applyAudioMix();
 
