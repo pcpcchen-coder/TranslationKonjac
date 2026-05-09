@@ -125,9 +125,14 @@ startTwoWayButton.addEventListener("click", async () => {
   clearTranscript();
   resetDiagnostics();
   setControls({ running: true });
-  setStatus("Preparing two-way call mode", "idle");
+  setStatus("Allow microphone access for your Chinese speech", "idle");
 
   try {
+    const micStream = await captureMicrophoneAudio("outbound");
+    runtime.streams.push(micStream);
+    startInputMeter(micStream, "outbound");
+
+    setStatus("Resolving safe output devices", "idle");
     await refreshOutputDevices({ preferBlackHole: true });
 
     const routingCheck = validateTwoWayOutputRouting({
@@ -137,11 +142,6 @@ startTwoWayButton.addEventListener("click", async () => {
     if (!routingCheck.ok) {
       throw new Error(routingCheck.error);
     }
-
-    setStatus("Allow microphone access for your Chinese speech", "idle");
-    const micStream = await captureMicrophoneAudio("outbound");
-    runtime.streams.push(micStream);
-    startInputMeter(micStream, "outbound");
 
     const inboundSource = selectedInboundSourceType();
     setStatus(
@@ -161,6 +161,7 @@ startTwoWayButton.addEventListener("click", async () => {
       stream: micStream,
       outputSelect: outputDevice,
       transcriptPrefix: "To them: ",
+      requireSink: true,
     });
 
     setStatus("Creating inbound English → Chinese session", "idle");
@@ -171,6 +172,7 @@ startTwoWayButton.addEventListener("click", async () => {
       stream: inboundStream,
       outputSelect: inboundOutputDevice,
       transcriptPrefix: "To you: ",
+      requireSink: true,
     });
 
     setStatus("Two-way call translation live", "live");
@@ -240,13 +242,20 @@ async function createSession(language) {
   return body;
 }
 
-async function connectRealtimeTranslation({ name, session, stream, outputSelect, transcriptPrefix }) {
+async function connectRealtimeTranslation({
+  name,
+  session,
+  stream,
+  outputSelect,
+  transcriptPrefix,
+  requireSink = false,
+}) {
   const peerConnection = new RTCPeerConnection();
   const dataChannel = peerConnection.createDataChannel("oai-events");
   const translatedAudio = new Audio();
   translatedAudio.autoplay = true;
   translatedAudio.playsInline = true;
-  await applyOutputDevice(translatedAudio, outputSelect, `${name} output`);
+  await applyOutputDevice(translatedAudio, outputSelect, `${name} output`, { strict: requireSink });
   applyAudioMix();
 
   peerConnection.onconnectionstatechange = () => {
@@ -547,22 +556,43 @@ function restoreInputSelection(select, previousValue, { preferBlackHole16 }) {
   }
 }
 
-async function applyOutputDevice(audio, select, context) {
-  if (!audio || !select?.value) {
+async function applyOutputDevice(audio, select, context, { strict = false } = {}) {
+  if (!audio) {
+    return;
+  }
+
+  if (!select?.value) {
+    if (strict) {
+      throw new Error(`${context}: an explicit output device is required (got 'System default').`);
+    }
     return;
   }
 
   if (typeof audio.setSinkId !== "function") {
-    logEvent("audio.output", "This browser cannot choose output devices. Use Chrome/Edge or macOS sound routing.");
+    const message = "This browser cannot choose output devices. Use Chrome/Edge or macOS sound routing.";
+    if (strict) {
+      throw new Error(`${context}: ${message}`);
+    }
+    logEvent("audio.output", message);
     return;
   }
 
   try {
     await audio.setSinkId(select.value);
     const label = select.selectedOptions[0]?.textContent ?? "selected output";
-    logEvent("audio.output", `${context}: ${label}`);
+    const sinkSuffix = audio.sinkId ? ` sinkId=${audio.sinkId}` : "";
+    logEvent("audio.output", `${context}: ${label}${sinkSuffix}`);
+    if (strict && audio.sinkId && audio.sinkId !== select.value) {
+      throw new Error(
+        `${context}: requested sinkId ${select.value} but browser bound ${audio.sinkId}. Grant device permissions and retry.`,
+      );
+    }
   } catch (error) {
-    logEvent("audio.output.error", error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    logEvent("audio.output.error", `${context}: ${message}`);
+    if (strict) {
+      throw new Error(`${context}: failed to apply output device — ${message}`);
+    }
   }
 }
 
