@@ -38,6 +38,9 @@ test("serves the browser app from the root route", async () => {
     assert.match(body, /Test outbound/);
     assert.match(body, /Audit inbound→BlackHole 2ch leak/);
     assert.match(body, /Audit microphone capture of inbound/);
+    assert.match(body, /Start BlackHole 2ch live monitor/);
+    assert.match(body, /Show macOS default output/);
+    assert.match(body, /BlackHole 2ch live/);
     assert.match(body, /Translated audio output/);
     assert.match(body, /option value="en" selected/);
     assert.doesNotMatch(body, /Start translating</);
@@ -88,6 +91,11 @@ test("serves browser app code that connects to translation over WebRTC", async (
     assert.match(body, /audit\.mic\.result/);
     assert.match(body, /LEAK DETECTED/);
     assert.match(body, /MIC LEAK DETECTED/);
+    assert.match(body, /startBh2chMonitor/);
+    assert.match(body, /logSystemDefaultOutput/);
+    assert.match(body, /monitor\.bh2ch/);
+    assert.match(body, /default\.output/);
+    assert.match(body, /Chrome bound/);
     assert.match(body, /audio.blocked/);
     assert.match(body, /BlackHole output is blocked/);
     assert.match(body, /guardOutboundMicDuringInboundPlayback/);
