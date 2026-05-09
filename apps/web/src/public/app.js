@@ -27,6 +27,7 @@ const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
 const testChineseOutputButton = document.querySelector("#testChineseOutputButton");
 const testOutboundButton = document.querySelector("#testOutboundButton");
 const auditLeakButton = document.querySelector("#auditLeakButton");
+const auditMicCaptureButton = document.querySelector("#auditMicCaptureButton");
 const twoWayPanel = document.querySelector("#twoWayPanel");
 const startButton = document.querySelector("#startButton");
 const startTwoWayButton = document.querySelector("#startTwoWayButton");
@@ -113,6 +114,10 @@ testOutboundButton.addEventListener("click", () => {
 
 auditLeakButton.addEventListener("click", () => {
   void auditInboundLeak();
+});
+
+auditMicCaptureButton.addEventListener("click", () => {
+  void auditOutboundMicCapture();
 });
 
 navigator.mediaDevices?.addEventListener?.("devicechange", () => {
@@ -443,6 +448,130 @@ async function auditInboundLeak() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function auditOutboundMicCapture() {
+  if (!navigator.mediaDevices?.enumerateDevices || !navigator.mediaDevices?.getUserMedia) {
+    logEvent("audit.mic.error", "Browser does not support enumerateDevices/getUserMedia");
+    return;
+  }
+
+  let micStream;
+  let audioContext;
+  const wasMicEnabled = diagnostics.outboundMicEnabled;
+
+  try {
+    if (!inboundOutputDevice.value) {
+      throw new Error("Choose an explicit 'Their voice → Chinese output' device first.");
+    }
+    if (isBlackHoleLabel(selectedOptionLabel(inboundOutputDevice))) {
+      throw new Error("Inbound output is a BlackHole device; routing is already misconfigured.");
+    }
+
+    if (runtime.outboundInputTracks.length) {
+      await setOutboundInputEnabled(false, "audit.mic");
+    }
+
+    micStream = await navigator.mediaDevices.getUserMedia(buildMicrophoneMediaOptions());
+    const tracks = micStream.getAudioTracks();
+    if (!tracks.length) {
+      throw new Error("getUserMedia returned no audio tracks.");
+    }
+
+    const settings = tracks[0].getSettings?.() ?? {};
+    const resolvedDeviceId = settings.deviceId ?? "";
+    let resolvedLabel = tracks[0].label || "";
+    if (!resolvedLabel && resolvedDeviceId) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      resolvedLabel =
+        devices.find(
+          (device) => device.kind === "audioinput" && device.deviceId === resolvedDeviceId,
+        )?.label ?? "";
+    }
+    logEvent(
+      "audit.mic.device",
+      `Resolved microphone: "${resolvedLabel || "unlabeled"}" (deviceId=${resolvedDeviceId || "default"})`,
+    );
+
+    audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(micStream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 4096;
+    source.connect(analyser);
+
+    const samples = new Float32Array(analyser.fftSize);
+    const measureRms = () => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) sum += sample * sample;
+      return Math.sqrt(sum / samples.length);
+    };
+
+    await sleep(500);
+    let baseline = 0;
+    for (let i = 0; i < 5; i += 1) {
+      baseline = Math.max(baseline, measureRms());
+      await sleep(60);
+    }
+    logEvent("audit.mic.baseline", `Microphone idle peak RMS: ${baseline.toFixed(4)}`);
+
+    const tone = createTranslatedAudioSink("audit mic tone");
+    tone.volume = 0.6;
+    tone.src = createToneWavDataUrl({ frequency: 660, durationSeconds: 1.5 });
+    await applyOutputDevice(tone, inboundOutputDevice, "audit.mic (inbound sink)", {
+      required: true,
+      forbidBlackHole: true,
+    });
+    tone.muted = false;
+    await tone.play();
+
+    await sleep(250);
+    let peak = 0;
+    for (let i = 0; i < 12; i += 1) {
+      peak = Math.max(peak, measureRms());
+      await sleep(80);
+    }
+    logEvent(
+      "audit.mic.peak",
+      `Microphone peak RMS while inbound tone playing: ${peak.toFixed(4)}`,
+    );
+
+    const delta = peak - baseline;
+    const leakThreshold = 0.005;
+    if (delta > leakThreshold) {
+      const looksLikeBluetoothHeadset = /bluetooth|airpods|shokz|openrun|bose|sony/i.test(
+        resolvedLabel,
+      );
+      const hint = looksLikeBluetoothHeadset
+        ? ` The mic appears to be a Bluetooth headset's onboard mic — macOS HFP profile likely auto-switched it. In System Settings → Sound → Input, pick MacBook Pro Microphone (or another physical mic) instead.`
+        : " Even physical mics can capture audible bleed from the inbound output. Use headphones with sufficient isolation, or pick a different mic in macOS Sound settings.";
+      logEvent(
+        "audit.mic.result",
+        `MIC LEAK DETECTED (delta=${delta.toFixed(4)}). Microphone "${resolvedLabel}" is acoustically capturing the inbound output. The outbound translation session will pick up your inbound Chinese as input.${hint}`,
+      );
+    } else {
+      logEvent(
+        "audit.mic.result",
+        `OK (delta=${delta.toFixed(4)}). Microphone "${resolvedLabel}" does not capture the inbound tone above the noise floor.`,
+      );
+    }
+  } catch (error) {
+    logEvent("audit.mic.error", error instanceof Error ? error.message : String(error));
+  } finally {
+    if (micStream) {
+      micStream.getTracks().forEach((track) => track.stop());
+    }
+    if (audioContext && audioContext.state !== "closed") {
+      try {
+        await audioContext.close();
+      } catch {
+        // ignore
+      }
+    }
+    if (runtime.outboundInputTracks.length && wasMicEnabled) {
+      await setOutboundInputEnabled(true, "audit.mic done");
+    }
+  }
 }
 
 function createToneWavDataUrl({ frequency, durationSeconds }) {
@@ -1080,6 +1209,7 @@ function setControls({ running }) {
   testChineseOutputButton.disabled = false;
   testOutboundButton.disabled = false;
   auditLeakButton.disabled = false;
+  auditMicCaptureButton.disabled = false;
 
   if (!running) {
     updateModeUi();

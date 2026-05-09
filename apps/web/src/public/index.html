@@ -115,6 +115,9 @@
           <button id="auditLeakButton" type="button" class="secondary mini-button">
             Audit inbound→BlackHole 2ch leak
           </button>
+          <button id="auditMicCaptureButton" type="button" class="secondary mini-button">
+            Audit microphone capture of inbound
+          </button>
           <p class="field-hint">
             Strict isolation: set LINE speaker/output to BlackHole 16ch, then select that same device here as inbound input. For "Their voice → Chinese output", explicitly pick your real headphones or speakers — do not leave it on "System default" and do not pick any BlackHole device, otherwise translated Chinese can route back into the call. The Audit button captures BlackHole 2ch while playing a 660 Hz tone through the inbound output and reports any leak — useful when a macOS Multi-Output / Aggregate Device silently routes the inbound sink into BlackHole 2ch.
           </p>
