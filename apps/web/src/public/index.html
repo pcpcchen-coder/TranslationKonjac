@@ -88,9 +88,6 @@
           <select id="outputDevice">
             <option value="">System default</option>
           </select>
-          <button id="testOutboundButton" type="button" class="secondary mini-button">
-            Test outbound (partner should hear 440 Hz)
-          </button>
           <p class="field-hint">
             One-way output, or two-way outbound English. Pick BlackHole 2ch for LINE/FaceTime mic.
           </p>
@@ -109,23 +106,8 @@
           <select id="inboundOutputDevice">
             <option value="">System default</option>
           </select>
-          <button id="testChineseOutputButton" type="button" class="secondary mini-button">
-            Test Chinese output (you should hear 880 Hz)
-          </button>
-          <button id="auditLeakButton" type="button" class="secondary mini-button">
-            Audit inbound→BlackHole 2ch leak
-          </button>
-          <button id="auditMicCaptureButton" type="button" class="secondary mini-button">
-            Audit microphone capture of inbound
-          </button>
-          <button id="liveBh2chMonitorButton" type="button" class="secondary mini-button">
-            Start BlackHole 2ch live monitor
-          </button>
-          <button id="showDefaultOutputButton" type="button" class="secondary mini-button">
-            Show macOS default output
-          </button>
           <p class="field-hint">
-            Strict isolation: set LINE speaker/output to BlackHole 16ch, then select that same device here as inbound input. For "Their voice → Chinese output", explicitly pick your real headphones or speakers — do not leave it on "System default" and do not pick any BlackHole device, otherwise translated Chinese can route back into the call. The Audit button captures BlackHole 2ch while playing a 660 Hz tone through the inbound output and reports any leak — useful when a macOS Multi-Output / Aggregate Device silently routes the inbound sink into BlackHole 2ch.
+            Strict isolation: set LINE speaker/output to BlackHole 16ch, then select that same device here as inbound input. For "Their voice → Chinese output", explicitly pick your real headphones or speakers — do not leave it on "System default" and do not pick any BlackHole device, otherwise translated Chinese can route back into the call.
           </p>
         </div>
 
@@ -169,11 +151,6 @@
         <div class="meter-card" id="inboundMeterCard" hidden>
           <span>Their voice inbound audio</span>
           <meter id="inboundMeter" min="0" max="1" value="0"></meter>
-        </div>
-        <div class="meter-card" id="bh2chLiveMeterCard" hidden>
-          <span>BlackHole 2ch live (outbound muted while monitoring)</span>
-          <meter id="bh2chLiveMeter" min="0" max="1" value="0"></meter>
-          <span id="bh2chLivePeakLabel">peak 0.0000</span>
         </div>
         <div class="meter-card">
           <span>WebRTC connection</span>
