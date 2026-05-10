@@ -24,6 +24,8 @@ const outputDevice = document.querySelector("#outputDevice");
 const inboundSourceType = document.querySelector("#inboundSourceType");
 const inboundInputDevice = document.querySelector("#inboundInputDevice");
 const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
+const myLanguage = document.querySelector("#myLanguage");
+const partnerLanguage = document.querySelector("#partnerLanguage");
 const twoWayPanel = document.querySelector("#twoWayPanel");
 const startButton = document.querySelector("#startButton");
 const startTwoWayButton = document.querySelector("#startTwoWayButton");
@@ -149,7 +151,13 @@ startTwoWayButton.addEventListener("click", async () => {
       throw new Error(routingCheck.error);
     }
 
-    setStatus("Allow microphone access for your Chinese speech", "idle");
+    const myLang = myLanguage.value;
+    const theirLang = partnerLanguage.value;
+    if (myLang === theirLang) {
+      throw new Error("Your language and their language must be different.");
+    }
+
+    setStatus(`Allow microphone access for your ${myLang} speech`, "idle");
     const micStream = await captureMicrophoneAudio("outbound");
     runtime.streams.push(micStream);
     runtime.outboundInputTracks = micStream.getAudioTracks();
@@ -159,17 +167,17 @@ startTwoWayButton.addEventListener("click", async () => {
     setStatus(
       inboundSource === "device"
         ? "Capturing LINE app audio from selected input device"
-        : "Pick the call tab that contains their English audio",
+        : `Pick the call tab that contains their ${theirLang} audio`,
       "idle",
     );
     const inboundStream = await captureInboundAudio("inbound");
     runtime.streams.push(inboundStream);
     startInputMeter(inboundStream, "inbound", inboundMeter);
 
-    setStatus("Creating outbound Chinese → English session", "idle");
-    const outboundSession = await createSession("en");
+    setStatus(`Creating outbound ${myLang} → ${theirLang} session`, "idle");
+    const outboundSession = await createSession(theirLang);
     runtime.outbound = await connectRealtimeTranslation({
-      name: "outbound mic→en",
+      name: `outbound mic→${theirLang}`,
       session: outboundSession,
       stream: micStream,
       outputSelect: outputDevice,
@@ -179,10 +187,12 @@ startTwoWayButton.addEventListener("click", async () => {
     runtime.outboundSenders = runtime.outbound.audioSenders;
     await setOutboundInputEnabled(true, "ready");
 
-    setStatus("Creating inbound English → Chinese session", "idle");
-    const inboundSession = await createSession("zh");
+    setStatus(`Creating inbound ${theirLang} → ${myLang} session`, "idle");
+    const inboundSession = await createSession(myLang);
     runtime.inbound = await connectRealtimeTranslation({
-      name: selectedInboundSourceType() === "device" ? "inbound device→zh" : "inbound tab→zh",
+      name: selectedInboundSourceType() === "device"
+        ? `inbound device→${myLang}`
+        : `inbound tab→${myLang}`,
       session: inboundSession,
       stream: inboundStream,
       outputSelect: inboundOutputDevice,
@@ -191,7 +201,7 @@ startTwoWayButton.addEventListener("click", async () => {
     });
 
     setStatus("Two-way call translation live", "live");
-    captureState.textContent = `outbound=mic→en, inbound=${selectedInboundSourceType()}→zh`;
+    captureState.textContent = `outbound=mic→${theirLang}, inbound=${selectedInboundSourceType()}→${myLang}`;
   } catch (error) {
     logEvent("error", error instanceof Error ? error.message : String(error));
     await stopAll("Stopped after two-way startup error", "error");
@@ -265,13 +275,13 @@ function assertTwoWayIsolation() {
 
   if (!inboundOutputDevice.value) {
     throw new Error(
-      "Strict isolation blocked startup: choose an explicit real headphones/speakers device for Their voice → Chinese output; System default is not allowed.",
+      "Strict isolation blocked startup: choose an explicit real headphones/speakers device for Their voice → translated output; System default is not allowed.",
     );
   }
 
   if (isBlackHoleLabel(inboundOutputLabel)) {
     throw new Error(
-      "Strict isolation blocked startup: Their voice → Chinese output cannot be any BlackHole device. Choose OpenRun Pro 2, speakers, or headphones.",
+      "Strict isolation blocked startup: Their voice → translated output cannot be any BlackHole device. Choose OpenRun Pro 2, speakers, or headphones.",
     );
   }
 }
@@ -709,7 +719,7 @@ async function applyOutputDevice(audio, select, context, policy = {}) {
     throw new Error(`${context}: explicit output device is required; System default is blocked.`);
   }
   if (policy.forbidBlackHole && isBlackHoleLabel(label)) {
-    throw new Error(`${context}: BlackHole output is blocked for inbound Chinese playback.`);
+    throw new Error(`${context}: BlackHole output is blocked for inbound translated playback.`);
   }
   if (policy.requireBlackHole2ch && !/blackhole\s*2ch/i.test(label)) {
     throw new Error(`${context}: BlackHole 2ch is required for outbound audio to LINE microphone.`);
@@ -965,6 +975,8 @@ function setControls({ running }) {
   inboundSourceType.disabled = running;
   inboundInputDevice.disabled = running;
   inboundOutputDevice.disabled = running;
+  myLanguage.disabled = running;
+  partnerLanguage.disabled = running;
 
   if (!running) {
     updateModeUi();
