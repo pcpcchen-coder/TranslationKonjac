@@ -18,18 +18,21 @@ const OUTPUT_TRANSCRIPT_EVENTS = new Set(["session.output_transcript.delta"]);
 const INPUT_TRANSCRIPT_EVENTS = new Set(["session.input_transcript.delta"]);
 
 const modeInputs = [...document.querySelectorAll("input[name='translationMode']")];
+const oneWayCard = document.querySelector("#oneWayCard");
+const twoWayCard = document.querySelector("#twoWayCard");
 const targetLanguage = document.querySelector("#targetLanguage");
 const audioSourceInputs = [...document.querySelectorAll("input[name='audioSource']")];
-const outputDevice = document.querySelector("#outputDevice");
+const oneWayOutputDevice = document.querySelector("#oneWayOutputDevice");
+const outboundOutputDevice = document.querySelector("#outboundOutputDevice");
 const inboundSourceType = document.querySelector("#inboundSourceType");
 const inboundInputDevice = document.querySelector("#inboundInputDevice");
 const inboundOutputDevice = document.querySelector("#inboundOutputDevice");
 const myLanguage = document.querySelector("#myLanguage");
 const partnerLanguage = document.querySelector("#partnerLanguage");
-const twoWayPanel = document.querySelector("#twoWayPanel");
 const startButton = document.querySelector("#startButton");
 const startTwoWayButton = document.querySelector("#startTwoWayButton");
-const stopButton = document.querySelector("#stopButton");
+const stopOneWayButton = document.querySelector("#stopOneWayButton");
+const stopTwoWayButton = document.querySelector("#stopTwoWayButton");
 const audioMix = document.querySelector("#audioMix");
 const mixValue = document.querySelector("#mixValue");
 const originalMixLabel = document.querySelector("#originalMixLabel");
@@ -84,9 +87,12 @@ for (const input of audioSourceInputs) {
   input.addEventListener("change", updateModeUi);
 }
 
-outputDevice.addEventListener("change", () => {
-  void applyOutputDevice(runtime.oneWay?.translatedAudio, outputDevice, "one-way output");
-  void applyOutputDevice(runtime.outbound?.translatedAudio, outputDevice, "outbound output");
+oneWayOutputDevice.addEventListener("change", () => {
+  void applyOutputDevice(runtime.oneWay?.translatedAudio, oneWayOutputDevice, "one-way output");
+});
+
+outboundOutputDevice.addEventListener("change", () => {
+  void applyOutputDevice(runtime.outbound?.translatedAudio, outboundOutputDevice, "outbound output");
 });
 
 inboundOutputDevice.addEventListener("change", () => {
@@ -121,7 +127,7 @@ startButton.addEventListener("click", async () => {
       name: "one-way",
       session,
       stream,
-      outputSelect: outputDevice,
+      outputSelect: oneWayOutputDevice,
       transcriptPrefix: "",
       outputPolicy: { required: false, forbidBlackHole: false, requireBlackHole2ch: false },
     });
@@ -144,7 +150,7 @@ startTwoWayButton.addEventListener("click", async () => {
     assertTwoWayIsolation();
 
     const routingCheck = validateTwoWayOutputRouting({
-      outboundDevice: readSelectedOption(outputDevice),
+      outboundDevice: readSelectedOption(outboundOutputDevice),
       inboundDevice: readSelectedOption(inboundOutputDevice),
     });
     if (!routingCheck.ok) {
@@ -180,7 +186,7 @@ startTwoWayButton.addEventListener("click", async () => {
       name: `outbound mic→${theirLang}`,
       session: outboundSession,
       stream: micStream,
-      outputSelect: outputDevice,
+      outputSelect: outboundOutputDevice,
       transcriptPrefix: "To them: ",
       outputPolicy: { required: true, forbidBlackHole: false, requireBlackHole2ch: true },
     });
@@ -208,7 +214,11 @@ startTwoWayButton.addEventListener("click", async () => {
   }
 });
 
-stopButton.addEventListener("click", async () => {
+stopOneWayButton.addEventListener("click", async () => {
+  await stopAll("Stopped", "idle");
+});
+
+stopTwoWayButton.addEventListener("click", async () => {
   await stopAll("Stopped", "idle");
 });
 
@@ -230,15 +240,13 @@ function updateModeUi() {
   const sourceType = selectedAudioSource();
   const isMic = sourceType === "microphone";
 
-  twoWayPanel.hidden = !twoWay;
+  oneWayCard.hidden = twoWay;
+  twoWayCard.hidden = !twoWay;
+  document.body.classList.toggle("mode-one-way", !twoWay);
+  document.body.classList.toggle("mode-two-way", twoWay);
+
   inboundMeterCard.hidden = !twoWay;
   inboundInputDevice.hidden = !twoWay || selectedInboundSourceType() !== "device";
-  startButton.hidden = twoWay;
-  startTwoWayButton.hidden = !twoWay;
-  targetLanguage.disabled = twoWay;
-  for (const input of audioSourceInputs) {
-    input.disabled = twoWay;
-  }
 
   startButton.textContent = isMic
     ? "Use microphone to start translating"
@@ -248,8 +256,8 @@ function updateModeUi() {
     : isMic
       ? "Captured microphone audio"
       : "Captured tab audio";
-  originalMixLabel.title = isMic || twoWay
-    ? "Microphone/source monitoring is disabled to avoid feedback."
+  originalMixLabel.title = isMic
+    ? "Microphone monitoring is disabled to avoid feedback."
     : "Original tab audio played locally by this app.";
 }
 
@@ -264,12 +272,12 @@ function createTranslatedAudioSink(name) {
 }
 
 function assertTwoWayIsolation() {
-  const outboundLabel = selectedOptionLabel(outputDevice);
+  const outboundLabel = selectedOptionLabel(outboundOutputDevice);
   const inboundOutputLabel = selectedOptionLabel(inboundOutputDevice);
 
-  if (!outputDevice.value || !/blackhole\s*2ch/i.test(outboundLabel)) {
+  if (!outboundOutputDevice.value || !/blackhole\s*2ch/i.test(outboundLabel)) {
     throw new Error(
-      "Strict isolation blocked startup: Translated audio output must explicitly be BlackHole 2ch for LINE microphone.",
+      "Strict isolation blocked startup: Outbound (your voice → partner) must explicitly be BlackHole 2ch.",
     );
   }
 
@@ -606,7 +614,8 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
     return;
   }
 
-  const previousOutput = outputDevice.value;
+  const previousOneWayOutput = oneWayOutputDevice.value;
+  const previousOutbound = outboundOutputDevice.value;
   const previousInbound = inboundOutputDevice.value;
   const previousInboundInput = inboundInputDevice.value;
   let devices = [];
@@ -619,22 +628,24 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
 
   const outputs = devices.filter((device) => device.kind === "audiooutput");
   const inputs = devices.filter((device) => device.kind === "audioinput");
-  fillOutputSelect(outputDevice, outputs);
+  fillOutputSelect(oneWayOutputDevice, outputs);
+  fillOutputSelect(outboundOutputDevice, outputs);
   fillOutputSelect(inboundOutputDevice, outputs);
   fillInputSelect(inboundInputDevice, inputs);
 
+  restoreOutputSelection(oneWayOutputDevice, previousOneWayOutput, { preferBlackHole: false });
   if (preferBlackHole) {
-    outputDevice.value = pickPreferredOutboundDevice({
-      options: readSelectOptions(outputDevice),
-      previousValue: previousOutput,
+    outboundOutputDevice.value = pickPreferredOutboundDevice({
+      options: readSelectOptions(outboundOutputDevice),
+      previousValue: previousOutbound,
     });
     inboundOutputDevice.value = pickSafeInboundOutputDevice({
       options: readSelectOptions(inboundOutputDevice),
-      outboundDeviceId: outputDevice.value,
+      outboundDeviceId: outboundOutputDevice.value,
       previousValue: previousInbound,
     });
   } else {
-    restoreOutputSelection(outputDevice, previousOutput, { preferBlackHole: false });
+    restoreOutputSelection(outboundOutputDevice, previousOutbound, { preferBlackHole: false });
     restoreOutputSelection(inboundOutputDevice, previousInbound, { preferBlackHole: false });
   }
   restoreInputSelection(inboundInputDevice, previousInboundInput, { preferBlackHole16: true });
@@ -965,27 +976,30 @@ async function stopAll(message, state = "idle") {
 }
 
 function setControls({ running }) {
+  const twoWay = selectedMode() === "two-way";
+
   for (const input of modeInputs) {
     input.disabled = running;
   }
-  startButton.disabled = running;
-  startTwoWayButton.disabled = running;
-  stopButton.disabled = !running;
-  outputDevice.disabled = running;
+  startButton.disabled = running || twoWay;
+  startTwoWayButton.disabled = running || !twoWay;
+  stopOneWayButton.disabled = !running || twoWay;
+  stopTwoWayButton.disabled = !running || !twoWay;
+
+  oneWayOutputDevice.disabled = running;
+  outboundOutputDevice.disabled = running;
   inboundSourceType.disabled = running;
   inboundInputDevice.disabled = running;
   inboundOutputDevice.disabled = running;
   myLanguage.disabled = running;
   partnerLanguage.disabled = running;
+  targetLanguage.disabled = running;
+  for (const input of audioSourceInputs) {
+    input.disabled = running;
+  }
 
   if (!running) {
     updateModeUi();
-    return;
-  }
-
-  targetLanguage.disabled = true;
-  for (const input of audioSourceInputs) {
-    input.disabled = true;
   }
 }
 
