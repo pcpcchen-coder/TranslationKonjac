@@ -8,168 +8,182 @@ native macOS desktop app that runs on a Mac mini M4 (Apple Silicon).
 - **Working branch:** `claude/adoring-davinci-BrGrU`
 
 This document is the *execution* plan (milestones, tasks, acceptance criteria);
-the feasibility doc is why we chose Electron. Read that first if the framework
-choice is in question.
+the feasibility doc is why we chose Electron.
+
+> **2026-05-30 update:** the four open decisions are resolved (see below). This
+> adds two workstreams — a **Settings page** and **in-app update** — and
+> **removes Chrome-tab capture**. Estimate revised from ~3 to **~4.5–5.5 days**.
 
 ## Goal
 
 Ship the current browser app as a standalone macOS application so users can
 launch it from the Dock without keeping a Chrome tab open, with stable
-microphone / output-device permissions, preserving both existing modes:
+microphone / output-device permissions, preserving both modes:
 
-- One-way translation (microphone or Chrome-tab audio)
+- One-way translation (microphone source)
 - Two-way call mode (LINE on macOS via BlackHole 2ch outbound + BlackHole 16ch inbound)
+
+## Decisions (resolved 2026-05-30)
+
+1. **Distribution:** No Mac App Store. Ship a self-contained, **Developer-ID
+   signed + notarized DMG** ("keep the status quo" = stay on the DMG path, not
+   App Store). Electron bundles Chromium + Node, so it is **self-contained — no
+   extra downloads to run**.
+   - Note: signing is also the prerequisite for in-app update (decision 4) on
+     macOS — Squirrel.Mac requires a signed app. If we skip signing, the update
+     feature degrades to a "open GitHub Releases to download manually" link.
+2. **Chrome-tab capture:** **Removed.** Drop `getDisplayMedia` from the app.
+   Cover the former tab-capture scenarios via BlackHole / virtual input, **but
+   first verify the flows still work** (one-way "translate app/system audio",
+   two-way "LINE Web / browser-call inbound"). Also build a dedicated
+   **Settings UI**.
+3. **API key:** **First-run prompt** (stored in Keychain) **plus a field in the
+   Settings page** to view/update the key.
+4. **Bundle size / updates:** **No size cap; fully self-contained** (runs with no
+   extra downloads). Add an **in-app update** mechanism surfaced in the
+   **Settings page** (electron-updater against GitHub Releases; requires signing
+   per decision 1).
 
 ## What we are porting
 
-The web app is two pieces:
-
 1. **Node HTTP server** — `apps/web/src/server.js` + `apps/web/src/session.js`.
-   Serves the static front-end and exposes `POST /session`, which exchanges
+   Serves the static front-end and exposes `POST /session`, exchanging
    `OPENAI_API_KEY` for a short-lived OpenAI Realtime Translation client secret.
-2. **Front-end** — `apps/web/src/public/app.js` (~1072 lines) plus helper
-   modules. This is the core and depends on these browser APIs:
+2. **Front-end** — `apps/web/src/public/app.js` (~1072 lines) plus helpers,
+   depending on these browser APIs:
 
 | Browser API | Purpose | Port criticality |
 |---|---|---|
 | `RTCPeerConnection` | Connect to OpenAI Realtime | Required |
 | `getUserMedia` | Capture microphone | Required |
-| `getDisplayMedia({audio})` | Capture Chrome-tab audio (one-way) | Only if tab mode kept |
+| ~~`getDisplayMedia({audio})`~~ | ~~Chrome-tab audio~~ | **Decision 2: removed** |
 | `enumerateDevices` | List BlackHole 2ch / 16ch | Required |
 | **`setSinkId`** | Route a specific `<audio>` to a specific output | **Keystone of two-way isolation** |
 | `AudioContext` / `AudioWorklet` | Inbound playback fix, PCM capture | Required |
 | `replaceTrack(null)` | Two-way echo guard | Required |
 
-The porting risk is concentrated in `setSinkId` + `AudioWorklet` + WebRTC
-behavior, which is exactly why v1 uses Electron's Chromium (identical to the
-browser we already test in) rather than WKWebView.
-
 ## Framework decision: Electron for v1
 
-Per [`docs/macos-app-plan.md`](macos-app-plan.md): Electron ships the same
-Chromium we already rely on, so the audio path has near-zero porting risk. The
-~150 MB bundle is the only meaningful tax. Tauri / WKWebView is the v2 candidate
-if size becomes a complaint, after the audio isolation scenarios are re-verified
-on Safari.
+Electron ships the same Chromium we already test in, so the audio path
+(`setSinkId`, AudioWorklet, WebRTC) has near-zero porting risk, and it is
+inherently self-contained (satisfying decision 4). Tauri / WKWebView is the v2
+size-reduction candidate. See [`docs/macos-app-plan.md`](macos-app-plan.md).
 
 ## Mac mini M4 / Apple Silicon notes
 
-- **arm64 architecture** — build target `arm64` (or `universal`); sign and
-  notarize on Apple Silicon.
-- **No built-in microphone** — the Mac mini has no mic (only a small speaker).
-  Two-way mode needs to capture the user's own Chinese speech, so an external
+- **arm64** — build target `arm64` (or `universal`); sign and notarize on Apple Silicon.
+- **No built-in microphone** — the Mac mini has no mic (only a small speaker);
+  two-way mode needs to capture the user's own Chinese speech, so an external
   microphone / headset / audio interface is a hardware prerequisite.
-- **Permissions (TCC)** — Microphone is required. Screen Recording is only
-  needed if we keep the Chrome-tab `getDisplayMedia` flow.
-- **Virtual audio** — call routing still requires `BlackHole 2ch` (outbound into
-  LINE's mic) and `BlackHole 16ch` (inbound from LINE's speaker), unchanged from
-  the web version.
+- **Permissions (TCC)** — Microphone is required. Screen Recording is no longer
+  needed (tab capture removed per decision 2).
+- **Virtual audio** — still requires `BlackHole 2ch` (outbound into LINE's mic)
+  and `BlackHole 16ch` (inbound from LINE's speaker).
 
-## Target architecture
-
-Lives in the existing `apps/macos/` directory (following the repo's
-`apps/<platform>` convention, superseding the `/desktop` path in the older doc):
+## Target architecture (in `apps/macos/`)
 
 ```
 apps/macos/
-  package.json          # electron, electron-builder, keytar
+  package.json          # electron, electron-builder, electron-updater, keytar
   electron/
-    main.js             # start session server, create window, permissions, menu
-    preload.js          # safe IPC bridge (config in, never leaks the API key)
+    main.js             # session server, window, permissions, menu, auto-update
+    preload.js          # safe IPC bridge (config/key in, never leaks the key to renderer)
+  renderer/
+    settings.html/.js   # Settings page: API-key update, check for updates
   build/
     icon.icns
   entitlements.mac.plist
-apps/web/               # untouched — reused as the renderer payload
+apps/web/               # untouched — reused as the main translation renderer payload
 ```
 
 - **Main process:** start the existing session server on
   `127.0.0.1:<random port>` (or import `session.js` in-process); keep
-  `OPENAI_API_KEY` in the macOS Keychain via `keytar`; create a `BrowserWindow`
-  that loads the local server; auto-grant mic via `setPermissionRequestHandler`.
-- **Renderer:** reuse the current `index.html` + `app.js` with no changes.
+  `OPENAI_API_KEY` in the Keychain via `keytar`; create the `BrowserWindow`;
+  auto-grant mic via `setPermissionRequestHandler`; manage electron-updater.
+- **Renderer:** main translation screen reuses `index.html` + `app.js` (with the
+  tab-source UI removed); plus a new Settings page.
 
 ## Phased plan
 
-### M0 — Decisions & prerequisites
-- [ ] Resolve the 4 open decisions (distribution / tab audio / key UX / size budget) — see below.
-- [ ] Apple Developer ID for signing + notarization (US$99/yr).
-- [ ] Mac mini M4 test machine + external microphone + BlackHole 2ch/16ch installed.
+### M0 — Decisions & prerequisites — decisions done
+- [x] Four decisions resolved (2026-05-30).
+- [ ] Apple Developer ID (signing + notarization; also the in-app-update prerequisite).
+- [ ] Mac mini M4 test machine + external microphone + BlackHole 2ch/16ch.
 
 ### M1 — Scaffold (~0.5 day)
-- [ ] Create the Electron skeleton in `apps/macos/` + `electron-builder` config (target: dmg, arch: arm64).
+- [ ] Electron skeleton in `apps/macos/` + `electron-builder` (target: dmg, arch: arm64, self-contained).
 - [ ] BrowserWindow loads the reused web front-end.
-- [ ] Prepare `.icns` app icon.
-- [ ] `npm run dev:mac` opens a window locally.
+- [ ] `.icns` app icon.
+- [ ] `npm run dev:mac` opens a window.
 
 ### M2 — Session server & secret handling (~0.5 day)
-- [ ] Main process manages the session server lifecycle (sidecar or in-process).
-- [ ] First-run dialog asks for the OpenAI API key → store in Keychain (keytar).
-- [ ] Key only reaches the server side; **never** exposed to the renderer.
-- [ ] Server binds to a random port on 127.0.0.1.
+- [ ] Main process manages the session server lifecycle.
+- [ ] First-run dialog asks for the OpenAI API key → store in Keychain.
+- [ ] Key only reaches the server; **never** exposed to the renderer; server binds a random port on 127.0.0.1.
 
 ### M3 — Permissions & native shell (~0.5 day)
-- [ ] `setPermissionRequestHandler` auto-grants mic, denies camera by default.
-- [ ] `Info.plist`: `NSMicrophoneUsageDescription` (required), `NSCameraUsageDescription` (only if needed).
-- [ ] Menu: Quit / Reload / Toggle DevTools / About + shortcuts.
-- [ ] First run triggers and verifies the macOS microphone authorization flow.
+- [ ] `setPermissionRequestHandler` auto-grants mic, denies camera.
+- [ ] `Info.plist`: `NSMicrophoneUsageDescription`.
+- [ ] Menu: Quit / Reload / DevTools / About / Settings + shortcuts.
 
-### M4 — Audio path verification (real hardware, ~0.5 day) — highest risk
-> Verify early: as soon as M1 yields a window that loads the front-end, smoke-test the audio path.
-- [ ] `enumerateDevices()` shows BlackHole 2ch / 16ch labels inside the app.
-- [ ] `setSinkId()` routes inbound `<audio>` to a chosen physical headset and outbound to BlackHole 2ch.
-- [ ] One-way: microphone → translated speech → chosen output.
-- [ ] Two-way: LINE app + BlackHole isolation; echo guard (`replaceTrack(null)` + mute) behaves correctly.
-- [ ] `Outbound mic` diagnostic row briefly shows muted/detached during inbound playback, then returns to enabled/attached.
+### M4 — Settings page (~0.75 day) — new (decisions 2/3/4)
+- [ ] Dedicated settings window/page, separate from the main translation screen.
+- [ ] View / update the API key → written to Keychain, effective without reinstall.
+- [ ] Placeholder "Check for updates / update status" UI (logic wired in M7).
+- [ ] (Optional) default target language, BlackHole routing reminders.
 
-### M5 — Sign / notarize / package (~1 day)
+### M5 — Remove tab capture + audio verification (~0.75 day) — highest risk (decision 2)
+- [ ] Remove `getDisplayMedia` and the tab-source UI.
+- [ ] **Verify former tab scenarios are achievable via BlackHole / virtual input** (one-way app/system audio, two-way browser-call inbound).
+- [ ] `enumerateDevices()` shows BlackHole 2ch / 16ch labels in-app.
+- [ ] `setSinkId()` routes inbound `<audio>` to a physical headset, outbound to BlackHole 2ch.
+- [ ] Two-way LINE app + BlackHole isolation; echo guard (`replaceTrack(null)` + mute) behaves correctly.
+
+### M6 — Self-contained packaging: sign + notarize (~1 day) (decisions 1/4)
 - [ ] Hardened runtime + entitlements (`com.apple.security.device.audio-input`, `com.apple.security.network.client`).
-- [ ] Developer ID signing.
-- [ ] `notarytool` notarize + staple.
-- [ ] `npm run dist:mac` produces an arm64 DMG that opens on a clean M4 with no Gatekeeper warning.
+- [ ] Developer ID signing → `notarytool` notarize + staple.
+- [ ] `npm run dist:mac` produces a self-contained arm64 DMG that opens on a clean M4 with no Gatekeeper warning.
 
-### M6 — QA & docs (~0.5 day)
+### M7 — In-app update (~0.75 day) — new (decision 4)
+- [ ] electron-updater against a GitHub Releases feed.
+- [ ] Settings-page "Check for updates" button + notify/download/install when a newer version exists.
+- [ ] Unsigned fallback: degrade to opening the Releases page for manual download.
+
+### M8 — QA & docs (~0.5 day)
 - [ ] Full QA matrix (see acceptance criteria).
-- [ ] Write `apps/macos/README.md`: install, permissions, BlackHole setup, API-key setup, LINE call steps.
+- [ ] `apps/macos/README.md`: install, permissions, BlackHole setup, API key (first-run + settings), updates, LINE call steps.
 - [ ] Update the macOS section in the root `README.md`.
 
-**Estimate: ~3 working days** (matches the feasibility doc; excludes first-time
-certificate / notarization fiddling buffer).
-
-## Open decisions (needed at M0, with recommendations)
-
-1. **Distribution channel:** notarized DMG (recommended — cheap, avoids App
-   Store review friction over virtual-audio routing) vs Mac App Store?
-2. **Chrome-tab audio:** keep in-app `getDisplayMedia` tab capture (needs Screen
-   Recording permission) vs drop it and rely on BlackHole + microphone?
-   (Recommended: drop for v1 to reduce permission complexity.)
-3. **API key UX:** Keychain prompt on first run (recommended) vs an `.env`-style
-   file in `~/Library/Application Support/`?
-4. **Size budget:** is ~150 MB DMG acceptable for v1 (recommended) vs plan the
-   Tauri port from day one?
+**Estimate: ~4.5–5.5 working days** (includes Settings page, tab-capture removal
++ verification, and in-app update; excludes first-time certificate /
+notarization buffer).
 
 ## Acceptance criteria / QA matrix
 
-- [ ] On a clean Mac mini M4: open DMG → drag to Applications → launch from Dock, no Gatekeeper block.
-- [ ] First run correctly requests and remembers the OpenAI API key (Keychain).
-- [ ] First run correctly requests microphone permission.
+- [ ] Clean M4: open DMG → drag to Applications → launch from Dock; no Gatekeeper block; **no extra runtime download required**.
+- [ ] First run requests and remembers the API key (Keychain).
+- [ ] **Settings page can update the API key; effective without reinstall.**
+- [ ] First run requests microphone permission.
 - [ ] One-way (microphone source) translation works.
-- [ ] Two-way LINE app mode: the other party hears English, you hear Chinese, no echo/loop.
-- [ ] BlackHole isolation regression passes (Chinese output never routed back into any BlackHole device).
-- [ ] DevTools inspection confirms the renderer never sees `OPENAI_API_KEY`.
+- [ ] **Former Chrome-tab scenarios are achievable via BlackHole / virtual input.**
+- [ ] Two-way LINE app mode: the other party hears English, you hear Chinese, no echo/loop; BlackHole isolation regression passes.
+- [ ] **Settings-page "Check for updates" detects a newer release (and installs, or degrades to a manual download link).**
+- [ ] DevTools confirms the renderer never sees `OPENAI_API_KEY`.
 
 ## Risks
 
-1. **Tab capture** — `getDisplayMedia({audio})` in Electron needs Screen
-   Recording permission; if unacceptable, take decision 2's drop path.
-2. **Notarization** — first-time signing/notarization is finicky (identity,
-   hardened runtime, entitlements); budget a half-day buffer.
-3. **Bundle size** — ~150 MB; if users push back, start the Tauri v2 plan.
-4. **Key exposure** — ensure the renderer never receives `OPENAI_API_KEY`, only
-   the short-lived client secret.
-5. **No built-in mic on Mac mini** — two-way self-voice capture needs an external
-   device; document this clearly.
+1. **In-app update needs signing** — macOS Squirrel.Mac auto-update requires a
+   signed app, tying decision 4 to decision 1's Developer ID signing; unsigned →
+   update degrades to manual download.
+2. **Functionality gap after removing tab capture** — confirm every former tab
+   scenario is reachable via BlackHole / virtual input (mitigation: select
+   BlackHole as the input device + document how to route app audio in).
+3. **Notarization** — first-time signing/notarization is finicky; budget a half-day buffer.
+4. **Key exposure** — the renderer must never receive `OPENAI_API_KEY`, only the short-lived client secret.
+5. **No built-in mic on Mac mini** — two-way self-voice capture needs an external device; document clearly.
 
 ## Out of scope for v1 (intentionally)
 
-Mac App Store distribution, auto-update channel, menu-bar status icon / global
-shortcut, multi-window / background mode, Tauri / WKWebView port.
+Mac App Store distribution, menu-bar status icon / global shortcut, multi-window
+/ background mode, Tauri / WKWebView port. (Note: in-app update has moved *into*
+v1 scope.)
