@@ -4,13 +4,17 @@
   "private": true,
   "description": "Realtime speech translation experiments across web, macOS, iOS, and Windows.",
   "workspaces": [
-    "apps/web"
+    "apps/web",
+    "apps/macos"
   ],
   "scripts": {
     "web:start": "npm --prefix apps/web run start",
     "web:dev": "npm --prefix apps/web run dev",
     "web:test": "npm --prefix apps/web test",
-    "test": "npm run web:test"
+    "macos:dev": "npm --prefix apps/macos run dev:mac",
+    "macos:dist": "npm --prefix apps/macos run dist:mac",
+    "macos:test": "npm --prefix apps/macos test",
+    "test": "npm run web:test && npm run macos:test"
   },
   "engines": {
     "node": ">=20"

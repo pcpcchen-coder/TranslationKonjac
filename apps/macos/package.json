@@ -1,0 +1,55 @@
+{
+  "name": "@translation-konjac/macos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Native macOS (Electron) wrapper for TranslationKonjac, reusing the apps/web front-end.",
+  "main": "electron/main.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:mac": "electron .",
+    "make-icon": "node scripts/make-placeholder-icon.mjs",
+    "dist:mac": "npm run make-icon && electron-builder --mac --arm64",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.translationkonjac.app",
+    "productName": "TranslationKonjac",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "build/entitlements.mac.plist"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/src",
+        "to": "web/src"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "icon": "build/icon.png",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "TranslationKonjac uses your microphone to capture speech for real-time translation."
+      }
+    }
+  }
+}
