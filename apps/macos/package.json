@@ -18,6 +18,9 @@
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0"
   },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
+  },
   "build": {
     "appId": "com.translationkonjac.app",
     "productName": "TranslationKonjac",
