@@ -30,6 +30,7 @@ export async function startTranslationServer({
   port = 0,
   loadEnv = true,
   serverModule,
+  fetchImpl,
 } = {}) {
   const { buildServer, loadEnvFiles } = await import(toModuleUrl(serverModule));
 
@@ -37,7 +38,10 @@ export async function startTranslationServer({
     loadEnvFiles(env);
   }
 
-  const server = buildServer({ env });
+  // buildServer reads env.OPENAI_API_KEY per request, so the caller can inject
+  // a fresh key into this same env object later and it takes effect with no
+  // restart. fetchImpl is optional (undefined -> buildServer's default fetch).
+  const server = buildServer({ env, fetchImpl });
 
   await new Promise((resolve, reject) => {
     const onError = (error) => {
