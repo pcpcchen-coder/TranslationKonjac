@@ -5,6 +5,7 @@ native macOS desktop app that runs on a Mac mini M4 (Apple Silicon).
 
 - **Feasibility & option comparison:** [`docs/macos-app-plan.md`](macos-app-plan.md)
 - **Model selection, timeline & cost plan:** [`docs/macos-model-cost-plan.md`](macos-model-cost-plan.md)
+- **Step-by-step TDD plan (S1–S20, execution granularity):** [`docs/macos-step-plan.md`](macos-step-plan.md)
 - **Tracking issue:** [#2](https://github.com/pcpcchen-coder/TranslationKonjac/issues/2)
 - **Working branch:** `claude/adoring-davinci-BrGrU`
 
