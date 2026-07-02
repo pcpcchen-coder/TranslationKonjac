@@ -4,6 +4,7 @@ Concrete, phased execution plan for turning the `apps/web` browser app into a
 native macOS desktop app that runs on a Mac mini M4 (Apple Silicon).
 
 - **Feasibility & option comparison:** [`docs/macos-app-plan.md`](macos-app-plan.md)
+- **Model selection, timeline & cost plan:** [`docs/macos-model-cost-plan.md`](macos-model-cost-plan.md)
 - **Tracking issue:** [#2](https://github.com/pcpcchen-coder/TranslationKonjac/issues/2)
 - **Working branch:** `claude/adoring-davinci-BrGrU`
 
