@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'"
+    />
+    <title>TranslationKonjac Settings</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <main class="settings">
+      <h1>Settings</h1>
+
+      <section class="card">
+        <h2>OpenAI API key</h2>
+        <p class="status" id="keyStatus">Loading…</p>
+
+        <label class="field">
+          <span>Update API key</span>
+          <input
+            id="keyInput"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="sk-…"
+          />
+        </label>
+        <p class="hint" id="keyHint"></p>
+
+        <div class="actions">
+          <button id="saveButton" type="button" disabled>Save</button>
+          <button id="verifyButton" type="button">Verify</button>
+          <button id="clearButton" type="button" class="ghost">Clear</button>
+        </div>
+        <p class="message" id="message" aria-live="polite"></p>
+      </section>
+
+      <section class="card">
+        <h2>Updates</h2>
+        <p class="status" id="updateStatus">App updates arrive with update support.</p>
+        <div class="actions">
+          <button id="checkUpdateButton" type="button" disabled>
+            Check for updates
+          </button>
+        </div>
+      </section>
+
+      <p class="version" id="version"></p>
+    </main>
+    <script type="module" src="settings.js"></script>
+  </body>
+</html>

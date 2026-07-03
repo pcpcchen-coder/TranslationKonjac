@@ -30,6 +30,7 @@
     },
     "files": [
       "electron/**/*",
+      "renderer/**/*",
       "build/entitlements.mac.plist"
     ],
     "extraResources": [
