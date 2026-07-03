@@ -13,6 +13,7 @@ import {
 import {
   availableInboundSources,
   availableOneWaySources,
+  chooseOneWayCaptureOptions,
   defaultSelections,
   detectDesktop,
 } from "/desktop-capabilities.js";
@@ -29,6 +30,8 @@ const twoWayCard = document.querySelector("#twoWayCard");
 const targetLanguage = document.querySelector("#targetLanguage");
 const audioSourceInputs = [...document.querySelectorAll("input[name='audioSource']")];
 const oneWayOutputDevice = document.querySelector("#oneWayOutputDevice");
+const oneWayInputDevice = document.querySelector("#oneWayInputDevice");
+const oneWayInputField = document.querySelector("#oneWayInputField");
 const outboundOutputDevice = document.querySelector("#outboundOutputDevice");
 const inboundSourceType = document.querySelector("#inboundSourceType");
 const inboundInputDevice = document.querySelector("#inboundInputDevice");
@@ -150,7 +153,10 @@ startButton.addEventListener("click", async () => {
   setStatus(sourceType === "microphone" ? "Allow microphone access" : "Pick a browser tab with audio", "idle");
 
   try {
-    const stream = await captureAudioSource(sourceType, "one-way");
+    const stream =
+      sourceType === "microphone"
+        ? await captureMicrophoneAudio("one-way", oneWayCaptureOptions())
+        : await captureTabAudio("one-way");
     runtime.streams.push(stream);
     await refreshOutputDevices({ preferBlackHole: sourceType === "microphone" });
     startSourceAudio(stream, sourceType);
@@ -284,6 +290,9 @@ function updateModeUi() {
 
   inboundMeterCard.hidden = !twoWay;
   inboundInputDevice.hidden = !twoWay || selectedInboundSourceType() !== "device";
+  if (oneWayInputField) {
+    oneWayInputField.hidden = !(isDesktop && !twoWay && isMic);
+  }
 
   startButton.textContent = isMic
     ? "Use microphone to start translating"
@@ -573,14 +582,15 @@ async function captureTabAudio(label = "tab") {
   return stream;
 }
 
-async function captureMicrophoneAudio(label = "microphone") {
+async function captureMicrophoneAudio(
+  label = "microphone",
+  options = buildMicrophoneMediaOptions(),
+) {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("This browser does not support microphone capture.");
   }
 
-  const stream = await navigator.mediaDevices.getUserMedia(
-    buildMicrophoneMediaOptions(),
-  );
+  const stream = await navigator.mediaDevices.getUserMedia(options);
 
   const audioTracks = stream.getAudioTracks();
   if (audioTracks.length === 0) {
@@ -642,8 +652,15 @@ function captureInboundAudio(label = "inbound") {
   return captureTabAudio(label);
 }
 
-function captureAudioSource(sourceType, label) {
-  return sourceType === "microphone" ? captureMicrophoneAudio(label) : captureTabAudio(label);
+// One-way capture constraints. On desktop the user may pick an input device
+// (e.g. BlackHole 16ch) to translate another app's audio; on web this is always
+// the plain microphone (isDesktop is false, so the device id is ignored).
+function oneWayCaptureOptions() {
+  const deviceId = isDesktop ? oneWayInputDevice.value : "";
+  const deviceLabel = isDesktop
+    ? oneWayInputDevice.selectedOptions[0]?.textContent ?? ""
+    : "";
+  return chooseOneWayCaptureOptions({ isDesktop, deviceId, deviceLabel });
 }
 
 async function refreshOutputDevices({ preferBlackHole = false } = {}) {
@@ -655,6 +672,7 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
   const previousOutbound = outboundOutputDevice.value;
   const previousInbound = inboundOutputDevice.value;
   const previousInboundInput = inboundInputDevice.value;
+  const previousOneWayInput = oneWayInputDevice.value;
   let devices = [];
   try {
     devices = await navigator.mediaDevices.enumerateDevices();
@@ -669,6 +687,7 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
   fillOutputSelect(outboundOutputDevice, outputs);
   fillOutputSelect(inboundOutputDevice, outputs);
   fillInputSelect(inboundInputDevice, inputs);
+  fillInputSelect(oneWayInputDevice, inputs);
 
   restoreOutputSelection(oneWayOutputDevice, previousOneWayOutput, { preferBlackHole: false });
   if (preferBlackHole) {
@@ -686,6 +705,7 @@ async function refreshOutputDevices({ preferBlackHole = false } = {}) {
     restoreOutputSelection(inboundOutputDevice, previousInbound, { preferBlackHole: false });
   }
   restoreInputSelection(inboundInputDevice, previousInboundInput, { preferBlackHole16: true });
+  restoreInputSelection(oneWayInputDevice, previousOneWayInput, { preferBlackHole16: false });
 }
 
 function readSelectOptions(select) {

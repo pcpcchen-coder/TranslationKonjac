@@ -33,6 +33,7 @@ test("serves the browser app from the root route", async () => {
     assert.match(body, /id="oneWayCard"/);
     assert.match(body, /id="twoWayCard"/);
     assert.match(body, /id="oneWayOutputDevice"/);
+    assert.match(body, /id="oneWayInputDevice"/);
     assert.match(body, /id="outboundOutputDevice"/);
     assert.match(body, /id="inboundOutputDevice"/);
     assert.match(body, /id="stopOneWayButton"/);
@@ -111,6 +112,7 @@ test("serves browser app code that connects to translation over WebRTC", async (
     assert.match(body, /createMediaStreamDestination/);
     assert.match(body, /desktop-capabilities/);
     assert.match(body, /detectDesktop/);
+    assert.match(body, /chooseOneWayCaptureOptions/);
     assert.doesNotMatch(body, /playOutputTestTone/);
     assert.doesNotMatch(body, /auditInboundLeak/);
     assert.doesNotMatch(body, /auditOutboundMicCapture/);
