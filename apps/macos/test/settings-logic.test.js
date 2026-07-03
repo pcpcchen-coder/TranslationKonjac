@@ -49,6 +49,10 @@ test("nextState transitions through the save lifecycle", () => {
 });
 
 test("buildUpdateStatusText renders update states", () => {
+  assert.match(buildUpdateStatusText({ status: "checking" }), /check/i);
   assert.match(buildUpdateStatusText({ status: "up-to-date" }), /latest/i);
   assert.match(buildUpdateStatusText({ status: "update-available", version: "1.2.0" }), /1\.2\.0/);
+  assert.match(buildUpdateStatusText({ status: "downloading" }), /download/i);
+  assert.match(buildUpdateStatusText({ status: "error" }), /could not/i);
+  assert.equal(buildUpdateStatusText(null), "");
 });

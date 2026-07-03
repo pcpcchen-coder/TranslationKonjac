@@ -30,6 +30,12 @@ export function releasesPageUrl(repo = DEFAULT_REPO) {
   return `https://github.com/${repo}/releases`;
 }
 
+// electron-updater (Squirrel.Mac) only works for a packaged, code-signed app. In
+// dev or unsigned builds we fall back to detect-and-open-download.
+export function decideUpdateStrategy({ isPackaged, updaterAvailable }) {
+  return isPackaged && updaterAvailable ? "electron-updater" : "manual-fallback";
+}
+
 /**
  * @returns {Promise<
  *   | { status: "update-available", version: string, url: string }

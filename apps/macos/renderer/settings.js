@@ -2,6 +2,7 @@ import {
   maskKeyStatus,
   deriveFormState,
   nextState,
+  buildUpdateStatusText,
   INITIAL_SETTINGS_STATE,
 } from "./settings-logic.js";
 
@@ -16,7 +17,12 @@ const el = {
   clearButton: document.querySelector("#clearButton"),
   message: document.querySelector("#message"),
   version: document.querySelector("#version"),
+  updateStatus: document.querySelector("#updateStatus"),
+  checkUpdateButton: document.querySelector("#checkUpdateButton"),
+  downloadUpdateButton: document.querySelector("#downloadUpdateButton"),
 };
+
+let lastUpdate = null;
 
 let state = INITIAL_SETTINGS_STATE;
 
@@ -101,10 +107,32 @@ async function showVersion() {
   }
 }
 
+async function onCheckUpdate() {
+  el.updateStatus.textContent = buildUpdateStatusText({ status: "checking" });
+  el.downloadUpdateButton.hidden = true;
+  try {
+    lastUpdate = await bridge.updates.check();
+    el.updateStatus.textContent = buildUpdateStatusText(lastUpdate);
+    if (lastUpdate.status === "update-available" && lastUpdate.url) {
+      el.downloadUpdateButton.hidden = false;
+    }
+  } catch {
+    el.updateStatus.textContent = buildUpdateStatusText({ status: "error" });
+  }
+}
+
+async function onDownloadUpdate() {
+  if (lastUpdate?.url) {
+    await bridge.app.openExternal(lastUpdate.url);
+  }
+}
+
 el.keyInput.addEventListener("input", syncForm);
 el.saveButton.addEventListener("click", onSave);
 el.verifyButton.addEventListener("click", onVerify);
 el.clearButton.addEventListener("click", onClear);
+el.checkUpdateButton.addEventListener("click", onCheckUpdate);
+el.downloadUpdateButton.addEventListener("click", onDownloadUpdate);
 
 syncForm();
 render();

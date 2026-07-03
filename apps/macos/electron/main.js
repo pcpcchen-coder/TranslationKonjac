@@ -15,6 +15,8 @@ import { createSettingsHandlers } from "./settings-handlers.js";
 import { resolveStartupFlow } from "./app-flow.js";
 import { decidePermission } from "./permissions.js";
 import { buildMenuTemplate } from "./menu-template.js";
+import { decideUpdateStrategy } from "./update-check.js";
+import { createUpdateHandlers } from "./update-handlers.js";
 import {
   CHANNELS,
   validateSetKeyRequest,
@@ -32,6 +34,7 @@ let settingsWindow = null;
 let runtime = null;
 let store = null;
 let handlers = null;
+let updateHandlers = null;
 
 // In dev, server-runtime resolves the web app relative to itself. In a packaged
 // build, electron-builder copies apps/web/src to <resources>/web/src.
@@ -149,6 +152,8 @@ function registerIpc() {
     version: app.getVersion(),
     platform: process.platform,
   }));
+
+  ipcMain.handle(CHANNELS.UPDATE_CHECK, () => updateHandlers.check());
 }
 
 function installMenu() {
@@ -184,6 +189,14 @@ if (!gotLock) {
     // Share process.env with the session server so a key saved in Settings takes
     // effect live (see settings-handlers / server-runtime).
     handlers = createSettingsHandlers({ store, env: process.env });
+    updateHandlers = createUpdateHandlers({
+      strategy: decideUpdateStrategy({
+        isPackaged: app.isPackaged,
+        updaterAvailable: app.isPackaged,
+      }),
+      appVersion: app.getVersion(),
+      openExternalImpl: (url) => shell.openExternal(url),
+    });
 
     registerIpc();
     installMenu();
