@@ -109,6 +109,8 @@ test("serves browser app code that connects to translation over WebRTC", async (
     assert.match(body, /Chrome bound/);
     assert.match(body, /createMediaStreamSource/);
     assert.match(body, /createMediaStreamDestination/);
+    assert.match(body, /desktop-capabilities/);
+    assert.match(body, /detectDesktop/);
     assert.doesNotMatch(body, /playOutputTestTone/);
     assert.doesNotMatch(body, /auditInboundLeak/);
     assert.doesNotMatch(body, /auditOutboundMicCapture/);

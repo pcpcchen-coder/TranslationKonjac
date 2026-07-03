@@ -10,6 +10,12 @@ import {
   pickSafeInboundOutputDevice,
   validateTwoWayOutputRouting,
 } from "/output-routing.js";
+import {
+  availableInboundSources,
+  availableOneWaySources,
+  defaultSelections,
+  detectDesktop,
+} from "/desktop-capabilities.js";
 
 const TRANSLATION_CALL_URL =
   "https://api.openai.com/v1/realtime/translations/calls";
@@ -71,7 +77,38 @@ const runtime = {
 
 let diagnostics = createEmptyDiagnostics();
 
+// Desktop (Electron) removes Chrome-tab capture per decision 2. On the web build
+// isDesktop is false and every gate below is a no-op, so browser behavior is
+// unchanged. The markup is untouched; tab options are hidden at runtime only.
+const isDesktop = detectDesktop(window);
+
+function applySourceGating() {
+  const oneWaySources = availableOneWaySources(isDesktop);
+  for (const input of audioSourceInputs) {
+    const option = input.closest(".source-option");
+    if (option) {
+      option.hidden = !oneWaySources.includes(input.value);
+    }
+  }
+  const inboundSources = availableInboundSources(isDesktop);
+  for (const option of inboundSourceType.options) {
+    option.hidden = !inboundSources.includes(option.value);
+  }
+}
+
+if (isDesktop) {
+  const defaults = defaultSelections(true);
+  const oneWayRadio = audioSourceInputs.find((input) => input.value === defaults.oneWaySource);
+  if (oneWayRadio) {
+    oneWayRadio.checked = true;
+  }
+  if ([...inboundSourceType.options].some((option) => option.value === defaults.inboundSource)) {
+    inboundSourceType.value = defaults.inboundSource;
+  }
+}
+
 applyAudioMix();
+applySourceGating();
 updateModeUi();
 void refreshOutputDevices();
 
